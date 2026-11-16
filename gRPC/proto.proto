@@ -1,0 +1,18 @@
+syntax = "proto3";
+option go_package = "handin4/grpc/proto";
+
+
+message bidMSG {
+    int32 amount = 1;
+}
+message resultMSG {
+    int32 amount = 1;
+    BoolValue auctionOver = 2;
+}
+message emptyMSG {}
+
+
+service Auction {
+    rpc bid (bidMSG) returns (emptyMSG);
+    rpc Reply (emptyMSG) returns (resultMSG);
+}
