@@ -20,7 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	Auction_Bid_FullMethodName           = "/Auction/bid"
-	Auction_Reply_FullMethodName         = "/Auction/Reply"
+	Auction_Result_FullMethodName        = "/Auction/Result"
 	Auction_Election_FullMethodName      = "/Auction/election"
 	Auction_SetnewLeader_FullMethodName  = "/Auction/setnewLeader"
 	Auction_RequestLeader_FullMethodName = "/Auction/requestLeader"
@@ -33,7 +33,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AuctionClient interface {
 	Bid(ctx context.Context, in *BidMSG, opts ...grpc.CallOption) (*EmptyMSG, error)
-	Reply(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*ResultMSG, error)
+	Result(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*ResultMSG, error)
 	Election(ctx context.Context, in *IdentifierMSG, opts ...grpc.CallOption) (*EmptyMSG, error)
 	SetnewLeader(ctx context.Context, in *IdentifierMSG, opts ...grpc.CallOption) (*EmptyMSG, error)
 	RequestLeader(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*EmptyMSG, error)
@@ -59,10 +59,10 @@ func (c *auctionClient) Bid(ctx context.Context, in *BidMSG, opts ...grpc.CallOp
 	return out, nil
 }
 
-func (c *auctionClient) Reply(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*ResultMSG, error) {
+func (c *auctionClient) Result(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*ResultMSG, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ResultMSG)
-	err := c.cc.Invoke(ctx, Auction_Reply_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, Auction_Result_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (c *auctionClient) Update(ctx context.Context, in *BidMSG, opts ...grpc.Cal
 // for forward compatibility.
 type AuctionServer interface {
 	Bid(context.Context, *BidMSG) (*EmptyMSG, error)
-	Reply(context.Context, *EmptyMSG) (*ResultMSG, error)
+	Result(context.Context, *EmptyMSG) (*ResultMSG, error)
 	Election(context.Context, *IdentifierMSG) (*EmptyMSG, error)
 	SetnewLeader(context.Context, *IdentifierMSG) (*EmptyMSG, error)
 	RequestLeader(context.Context, *EmptyMSG) (*EmptyMSG, error)
@@ -143,8 +143,8 @@ type UnimplementedAuctionServer struct{}
 func (UnimplementedAuctionServer) Bid(context.Context, *BidMSG) (*EmptyMSG, error) {
 	return nil, status.Error(codes.Unimplemented, "method Bid not implemented")
 }
-func (UnimplementedAuctionServer) Reply(context.Context, *EmptyMSG) (*ResultMSG, error) {
-	return nil, status.Error(codes.Unimplemented, "method Reply not implemented")
+func (UnimplementedAuctionServer) Result(context.Context, *EmptyMSG) (*ResultMSG, error) {
+	return nil, status.Error(codes.Unimplemented, "method Result not implemented")
 }
 func (UnimplementedAuctionServer) Election(context.Context, *IdentifierMSG) (*EmptyMSG, error) {
 	return nil, status.Error(codes.Unimplemented, "method Election not implemented")
@@ -200,20 +200,20 @@ func _Auction_Bid_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Auction_Reply_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _Auction_Result_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(EmptyMSG)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AuctionServer).Reply(ctx, in)
+		return srv.(AuctionServer).Result(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Auction_Reply_FullMethodName,
+		FullMethod: Auction_Result_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AuctionServer).Reply(ctx, req.(*EmptyMSG))
+		return srv.(AuctionServer).Result(ctx, req.(*EmptyMSG))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -320,8 +320,8 @@ var Auction_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Auction_Bid_Handler,
 		},
 		{
-			MethodName: "Reply",
-			Handler:    _Auction_Reply_Handler,
+			MethodName: "Result",
+			Handler:    _Auction_Result_Handler,
 		},
 		{
 			MethodName: "election",

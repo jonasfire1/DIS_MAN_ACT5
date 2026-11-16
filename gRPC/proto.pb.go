@@ -210,10 +210,10 @@ const file_grpc_proto_proto_rawDesc = "" +
 	"\rIdentifierMSG\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x05R\x02id\"\n" +
 	"\n" +
-	"\bemptyMSG2\xf7\x01\n" +
+	"\bemptyMSG2\xf8\x01\n" +
 	"\aAuction\x12\x19\n" +
-	"\x03bid\x12\a.bidMSG\x1a\t.emptyMSG\x12\x1e\n" +
-	"\x05Reply\x12\t.emptyMSG\x1a\n" +
+	"\x03bid\x12\a.bidMSG\x1a\t.emptyMSG\x12\x1f\n" +
+	"\x06Result\x12\t.emptyMSG\x1a\n" +
 	".resultMSG\x12%\n" +
 	"\belection\x12\x0e.IdentifierMSG\x1a\t.emptyMSG\x12)\n" +
 	"\fsetnewLeader\x12\x0e.IdentifierMSG\x1a\t.emptyMSG\x12%\n" +
@@ -242,14 +242,14 @@ var file_grpc_proto_proto_goTypes = []any{
 }
 var file_grpc_proto_proto_depIdxs = []int32{
 	0, // 0: Auction.bid:input_type -> bidMSG
-	3, // 1: Auction.Reply:input_type -> emptyMSG
+	3, // 1: Auction.Result:input_type -> emptyMSG
 	2, // 2: Auction.election:input_type -> IdentifierMSG
 	2, // 3: Auction.setnewLeader:input_type -> IdentifierMSG
 	3, // 4: Auction.requestLeader:input_type -> emptyMSG
 	3, // 5: Auction.ping:input_type -> emptyMSG
 	0, // 6: Auction.update:input_type -> bidMSG
 	3, // 7: Auction.bid:output_type -> emptyMSG
-	1, // 8: Auction.Reply:output_type -> resultMSG
+	1, // 8: Auction.Result:output_type -> resultMSG
 	3, // 9: Auction.election:output_type -> emptyMSG
 	3, // 10: Auction.setnewLeader:output_type -> emptyMSG
 	3, // 11: Auction.requestLeader:output_type -> emptyMSG

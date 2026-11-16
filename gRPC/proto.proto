@@ -18,7 +18,7 @@ message emptyMSG {}
 
 service Auction {
     rpc bid (bidMSG) returns (emptyMSG);
-    rpc Reply (emptyMSG) returns (resultMSG);
+    rpc Result (emptyMSG) returns (resultMSG);
     rpc election(IdentifierMSG) returns (emptyMSG);
     rpc setnewLeader(IdentifierMSG) returns (emptyMSG);
     rpc requestLeader(emptyMSG) returns (emptyMSG);
