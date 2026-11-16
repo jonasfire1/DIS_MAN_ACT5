@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net"
 	"os"
 	"strconv"
@@ -28,7 +29,7 @@ func main() {
 	}
 
 	node := &Node{
-		Clients: make(map[int]pb.AuctionClient),
+		// initialize array code goes here
 	}
 	var node_address string
 
@@ -180,9 +181,22 @@ func main() {
 	}()
 }
 
+// call all clients with greater id than self, and if no responses are recieved, declare self new leader
 func (n *Node) StartElection() {
-
+	var peersChecked sync.WaitGroup
+	peersChecked.Add(len(n.Clients) - n.id - 1) // the amount of ids higher
+	higherFound := false
 	for i := n.id; i < len(n.Clients); i++ {
-
-	} // call all clients with greater id than self, and if no responses are recieved, declare self new leader
+		go func() {
+			defer peersChecked.Done()
+			response, err := n.Clients[0].Election(context.Background(), nil)
+			if err == nil && response != nil {
+				higherFound = true
+			}
+		}()
+	}
+	peersChecked.Wait()
+	if higherFound == false {
+		// code for winning election goes here
+	}
 }
