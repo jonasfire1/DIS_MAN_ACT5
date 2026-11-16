@@ -7,12 +7,21 @@ message bidMSG {
 }
 message resultMSG {
     int32 amount = 1;
-    BoolValue auctionOver = 2;
+    bool auctionOver = 2;
+}
+message IdentifierMSG {
+    int32 id = 1;
 }
 message emptyMSG {}
+
 
 
 service Auction {
     rpc bid (bidMSG) returns (emptyMSG);
     rpc Reply (emptyMSG) returns (resultMSG);
+    rpc election(IdentifierMSG) returns (emptyMSG);
+    rpc setnewLeader(IdentifierMSG) returns (emptyMSG);
+    rpc requestLeader(emptyMSG) returns (emptyMSG);
+    rpc ping(emptyMSG) returns (emptyMSG);
+    rpc update(bidMSG) returns (bidMSG);
 }
