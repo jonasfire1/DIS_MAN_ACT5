@@ -21,7 +21,7 @@ service Auction {
     rpc Result (emptyMSG) returns (resultMSG);
     rpc election(IdentifierMSG) returns (emptyMSG);
     rpc setnewLeader(IdentifierMSG) returns (emptyMSG);
-    rpc requestLeader(emptyMSG) returns (emptyMSG);
+    rpc requestLeader(emptyMSG) returns (IdentifierMSG);
     rpc ping(emptyMSG) returns (emptyMSG);
     rpc update(bidMSG) returns (bidMSG);
 }

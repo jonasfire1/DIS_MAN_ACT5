@@ -36,7 +36,7 @@ type AuctionClient interface {
 	Result(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*ResultMSG, error)
 	Election(ctx context.Context, in *IdentifierMSG, opts ...grpc.CallOption) (*EmptyMSG, error)
 	SetnewLeader(ctx context.Context, in *IdentifierMSG, opts ...grpc.CallOption) (*EmptyMSG, error)
-	RequestLeader(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*EmptyMSG, error)
+	RequestLeader(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*IdentifierMSG, error)
 	Ping(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*EmptyMSG, error)
 	Update(ctx context.Context, in *BidMSG, opts ...grpc.CallOption) (*BidMSG, error)
 }
@@ -89,9 +89,9 @@ func (c *auctionClient) SetnewLeader(ctx context.Context, in *IdentifierMSG, opt
 	return out, nil
 }
 
-func (c *auctionClient) RequestLeader(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*EmptyMSG, error) {
+func (c *auctionClient) RequestLeader(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*IdentifierMSG, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EmptyMSG)
+	out := new(IdentifierMSG)
 	err := c.cc.Invoke(ctx, Auction_RequestLeader_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -127,7 +127,7 @@ type AuctionServer interface {
 	Result(context.Context, *EmptyMSG) (*ResultMSG, error)
 	Election(context.Context, *IdentifierMSG) (*EmptyMSG, error)
 	SetnewLeader(context.Context, *IdentifierMSG) (*EmptyMSG, error)
-	RequestLeader(context.Context, *EmptyMSG) (*EmptyMSG, error)
+	RequestLeader(context.Context, *EmptyMSG) (*IdentifierMSG, error)
 	Ping(context.Context, *EmptyMSG) (*EmptyMSG, error)
 	Update(context.Context, *BidMSG) (*BidMSG, error)
 	mustEmbedUnimplementedAuctionServer()
@@ -152,7 +152,7 @@ func (UnimplementedAuctionServer) Election(context.Context, *IdentifierMSG) (*Em
 func (UnimplementedAuctionServer) SetnewLeader(context.Context, *IdentifierMSG) (*EmptyMSG, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetnewLeader not implemented")
 }
-func (UnimplementedAuctionServer) RequestLeader(context.Context, *EmptyMSG) (*EmptyMSG, error) {
+func (UnimplementedAuctionServer) RequestLeader(context.Context, *EmptyMSG) (*IdentifierMSG, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestLeader not implemented")
 }
 func (UnimplementedAuctionServer) Ping(context.Context, *EmptyMSG) (*EmptyMSG, error) {

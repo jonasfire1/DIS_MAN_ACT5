@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"time"
 
 	pb "handin5/gRPC"
 	"log"
@@ -17,7 +18,7 @@ import (
 type Node struct {
 	pb.UnimplementedAuctionServer
 	Mutex      sync.Mutex
-	Clients    []pb.AuctionClient
+	Clients    [4]pb.AuctionClient
 	id         int
 	currentPRM int
 }
@@ -176,27 +177,59 @@ func main() {
 		log.Println("Server SERVER_STARTED Port=" + node_address)
 
 		if err := grpcServer.Serve(listener); err != nil {
-			log.Println(err)
+			log.Fatal(err)
 		}
 	}()
+	node.StartElection()
+	for {
+
+	}
 }
 
 // call all clients with greater id than self, and if no responses are recieved, declare self new leader
 func (n *Node) StartElection() {
+	log.Println("starting election")
 	var peersChecked sync.WaitGroup
 	peersChecked.Add(len(n.Clients) - n.id - 1) // the amount of ids higher
 	higherFound := false
-	for i := n.id; i < len(n.Clients); i++ {
+	identifier := pb.IdentifierMSG{Id: int32(n.id)}
+	for i := n.id + 1; i < len(n.Clients); i++ {
 		go func() {
 			defer peersChecked.Done()
-			response, err := n.Clients[0].Election(context.Background(), nil)
+
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			response, err := n.Clients[i].Election(ctx, &identifier)
 			if err == nil && response != nil {
 				higherFound = true
 			}
 		}()
 	}
-	peersChecked.Wait()
+	log.Println("waiting for response")
+	peersChecked.Wait() // wait until all calls either respond or timeout.
 	if higherFound == false {
-		// code for winning election goes here
+		n.AnounceLeadership()
 	}
+}
+
+func (n *Node) AnounceLeadership() {
+
+	log.Println("Won leadership election")
+	identifier := pb.IdentifierMSG{Id: int32(n.id)}
+	for i := 0; i < n.id; i++ {
+		go n.Clients[i].SetnewLeader(context.Background(), &identifier)
+	}
+}
+
+func (n *Node) Election(ctx context.Context, msg *pb.IdentifierMSG) (*pb.EmptyMSG, error) {
+
+	go n.StartElection()       // start election in seperate go rountine
+	return &pb.EmptyMSG{}, nil // return to tell the calling node, that it is still alive and prevent a timeout.
+}
+
+func (n *Node) SetnewLeader(ctx context.Context, msg *pb.IdentifierMSG) (*pb.EmptyMSG, error) {
+
+	n.currentPRM = int(msg.Id)
+	log.Println("leader set to" + string(msg.Id))
+	return &pb.EmptyMSG{}, nil // return acknowledgement
 }

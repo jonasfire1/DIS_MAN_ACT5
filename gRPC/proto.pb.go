@@ -210,14 +210,14 @@ const file_grpc_proto_proto_rawDesc = "" +
 	"\rIdentifierMSG\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x05R\x02id\"\n" +
 	"\n" +
-	"\bemptyMSG2\xf8\x01\n" +
+	"\bemptyMSG2\xfd\x01\n" +
 	"\aAuction\x12\x19\n" +
 	"\x03bid\x12\a.bidMSG\x1a\t.emptyMSG\x12\x1f\n" +
 	"\x06Result\x12\t.emptyMSG\x1a\n" +
 	".resultMSG\x12%\n" +
 	"\belection\x12\x0e.IdentifierMSG\x1a\t.emptyMSG\x12)\n" +
-	"\fsetnewLeader\x12\x0e.IdentifierMSG\x1a\t.emptyMSG\x12%\n" +
-	"\rrequestLeader\x12\t.emptyMSG\x1a\t.emptyMSG\x12\x1c\n" +
+	"\fsetnewLeader\x12\x0e.IdentifierMSG\x1a\t.emptyMSG\x12*\n" +
+	"\rrequestLeader\x12\t.emptyMSG\x1a\x0e.IdentifierMSG\x12\x1c\n" +
 	"\x04ping\x12\t.emptyMSG\x1a\t.emptyMSG\x12\x1a\n" +
 	"\x06update\x12\a.bidMSG\x1a\a.bidMSGB\x14Z\x12handin4/grpc/protob\x06proto3"
 
@@ -252,7 +252,7 @@ var file_grpc_proto_proto_depIdxs = []int32{
 	1, // 8: Auction.Result:output_type -> resultMSG
 	3, // 9: Auction.election:output_type -> emptyMSG
 	3, // 10: Auction.setnewLeader:output_type -> emptyMSG
-	3, // 11: Auction.requestLeader:output_type -> emptyMSG
+	2, // 11: Auction.requestLeader:output_type -> IdentifierMSG
 	3, // 12: Auction.ping:output_type -> emptyMSG
 	0, // 13: Auction.update:output_type -> bidMSG
 	7, // [7:14] is the sub-list for method output_type
