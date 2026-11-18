@@ -20,6 +20,8 @@ const (
 	firstNodePort             = 5050
 	rpcTimeout                = 1 * time.Second
 	leaderAnnouncementTimeout = 2 * time.Second
+	heartbeatInterval         = 1 * time.Second
+	heartbeatFailureThreshold = 3
 	auctionDuration           = 100 * time.Second
 )
 
@@ -89,6 +91,8 @@ func main() {
 		time.Sleep(500 * time.Millisecond)
 		node.StartElection()
 	}()
+
+	go node.MonitorLeader()
 
 	if err := grpcServer.Serve(listener); err != nil {
 		log.Fatal(err)
@@ -646,4 +650,118 @@ func (n *Node) updateAuctionStatusLocked() {
 			n.highestBid,
 		)
 	}
+}
+func (n *Node) MonitorLeader() {
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+
+	consecutiveFailures := 0
+	monitoredLeader := -1
+
+	for range ticker.C {
+		n.Mutex.Lock()
+
+		leaderID := n.currentLeader
+
+		if leaderID == n.id {
+			consecutiveFailures = 0
+			monitoredLeader = leaderID
+			n.Mutex.Unlock()
+			continue
+		}
+
+		if leaderID < 0 || leaderID >= numberOfNodes {
+			consecutiveFailures = 0
+			monitoredLeader = leaderID
+			n.Mutex.Unlock()
+			continue
+		}
+
+		if leaderID != monitoredLeader {
+			consecutiveFailures = 0
+			monitoredLeader = leaderID
+		}
+
+		n.Clock++
+
+		request := &pb.AcknowledgementMSG{
+			Clock:        n.Clock,
+			LeaderId:     int32(leaderID),
+			StateVersion: n.stateVersion,
+		}
+
+		n.Mutex.Unlock()
+
+		ctx, cancel := context.WithTimeout(
+			context.Background(),
+			rpcTimeout,
+		)
+
+		response, err := n.Clients[leaderID].Ping(ctx, request)
+		cancel()
+
+		if err != nil {
+			consecutiveFailures++
+
+			n.Mutex.Lock()
+			n.Clock++
+
+			log.Printf(
+				"logical time %d: node %d failed to ping leader %d, failure %d of %d",
+				n.Clock,
+				n.id,
+				leaderID,
+				consecutiveFailures,
+				heartbeatFailureThreshold,
+			)
+
+			leaderIsStillCurrent := n.currentLeader == leaderID
+			electionAlreadyRunning := n.electionOngoing
+
+			n.Mutex.Unlock()
+
+			if consecutiveFailures >= heartbeatFailureThreshold &&
+				leaderIsStillCurrent &&
+				!electionAlreadyRunning {
+				n.handleLeaderFailure(leaderID)
+				consecutiveFailures = 0
+				monitoredLeader = -1
+			}
+
+			continue
+		}
+
+		n.Mutex.Lock()
+
+		if n.currentLeader == leaderID {
+			n.Clock = max(n.Clock, response.GetClock()) + 1
+		}
+
+		n.Mutex.Unlock()
+
+		consecutiveFailures = 0
+	}
+}
+
+func (n *Node) handleLeaderFailure(failedLeaderID int) {
+	n.Mutex.Lock()
+
+	if n.currentLeader != failedLeaderID || n.electionOngoing {
+		n.Mutex.Unlock()
+		return
+	}
+
+	n.currentLeader = -1
+	n.Clock++
+
+	log.Printf(
+		"logical time %d: node %d detected that leader %d failed",
+		n.Clock,
+		n.id,
+		failedLeaderID,
+	)
+
+	n.Mutex.Unlock()
+
+	n.StartElection()
 }
