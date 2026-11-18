@@ -20,6 +20,7 @@ const (
 	firstNodePort             = 5050
 	rpcTimeout                = 1 * time.Second
 	leaderAnnouncementTimeout = 2 * time.Second
+	auctionDuration           = 100 * time.Second
 )
 
 type Node struct {
@@ -33,6 +34,15 @@ type Node struct {
 	id              int
 	currentLeader   int
 	electionOngoing bool
+	leaderTerm      int64
+
+	highestBid            int32
+	highestBidder         string
+	auctionDeadlineUnixMs int64
+	auctionOver           bool
+	stateVersion          int64
+
+	processedRequests map[string]*pb.AcknowledgementMSG
 }
 
 func main() {
@@ -46,9 +56,10 @@ func main() {
 	}
 
 	node := &Node{
-		id:            nodeID,
-		Clock:         0,
-		currentLeader: -1,
+		id:                nodeID,
+		Clock:             0,
+		currentLeader:     -1,
+		processedRequests: make(map[string]*pb.AcknowledgementMSG),
 	}
 
 	nodeAddress := ":" + strconv.Itoa(firstNodePort+node.id)
@@ -279,12 +290,19 @@ func (n *Node) AnnounceLeadership() {
 
 	n.electionOngoing = false
 	n.currentLeader = n.id
+	n.leaderTerm++
+
+	if n.auctionDeadlineUnixMs == 0 {
+		n.auctionDeadlineUnixMs = time.Now().Add(auctionDuration).UnixMilli()
+	}
+
 	n.Clock++
 
 	log.Printf(
-		"logical time %d: node %d declared itself the leader",
+		"logical time %d: node %d declared itself the leader for term %d",
 		n.Clock,
 		n.id,
+		n.leaderTerm,
 	)
 
 	n.Mutex.Unlock()
@@ -303,8 +321,9 @@ func (n *Node) sendLeaderAnnouncement(peerID int) {
 	n.Clock++
 
 	request := &pb.IdentifierMSG{
-		Id:    int32(n.id),
-		Clock: n.Clock,
+		Id:         int32(n.id),
+		Clock:      n.Clock,
+		LeaderTerm: n.leaderTerm,
 	}
 
 	log.Printf(
@@ -396,11 +415,16 @@ func (n *Node) SetnewLeader(
 	n.currentLeader = int(msg.GetId())
 	n.electionOngoing = false
 
+	if msg.GetLeaderTerm() > n.leaderTerm {
+		n.leaderTerm = msg.GetLeaderTerm()
+	}
+
 	log.Printf(
-		"logical time %d: node %d accepted node %d as the new leader",
+		"logical time %d: node %d accepted node %d as the new leader for term %d",
 		n.Clock,
 		n.id,
 		msg.GetId(),
+		n.leaderTerm,
 	)
 
 	n.Clock++
@@ -411,4 +435,215 @@ func (n *Node) SetnewLeader(
 	return &pb.AcknowledgementMSG{
 		Clock: responseClock,
 	}, nil
+}
+
+func (n *Node) Bid(ctx context.Context, msg *pb.BidMSG) (*pb.AcknowledgementMSG, error) {
+	n.Mutex.Lock()
+	defer n.Mutex.Unlock()
+
+	n.Clock = max(n.Clock, msg.GetClock()) + 1
+
+	log.Printf(
+		"logical time %d: node %d received bid %d from bidder %q",
+		n.Clock,
+		n.id,
+		msg.GetAmount(),
+		msg.GetBidderId(),
+	)
+
+	if n.currentLeader != n.id {
+		n.Clock++
+
+		return &pb.AcknowledgementMSG{
+			Clock:        n.Clock,
+			Outcome:      pb.BidOutcome_BID_EXCEPTION,
+			Message:      "This node is not the leader",
+			LeaderId:     int32(n.currentLeader),
+			StateVersion: n.stateVersion,
+		}, nil
+	}
+
+	if msg.GetBidderId() == "" {
+		n.Clock++
+
+		return &pb.AcknowledgementMSG{
+			Clock:        n.Clock,
+			Outcome:      pb.BidOutcome_BID_FAIL,
+			Message:      "A bidder ID is required",
+			LeaderId:     int32(n.currentLeader),
+			StateVersion: n.stateVersion,
+		}, nil
+	}
+
+	if msg.GetRequestId() == "" {
+		n.Clock++
+
+		return &pb.AcknowledgementMSG{
+			Clock:        n.Clock,
+			Outcome:      pb.BidOutcome_BID_FAIL,
+			Message:      "A request ID is required",
+			LeaderId:     int32(n.currentLeader),
+			StateVersion: n.stateVersion,
+		}, nil
+	}
+
+	if previousResponse, found := n.processedRequests[msg.GetRequestId()]; found {
+		n.Clock++
+
+		return &pb.AcknowledgementMSG{
+			Clock:        n.Clock,
+			Outcome:      previousResponse.GetOutcome(),
+			Message:      previousResponse.GetMessage(),
+			LeaderId:     previousResponse.GetLeaderId(),
+			StateVersion: previousResponse.GetStateVersion(),
+		}, nil
+	}
+
+	n.updateAuctionStatusLocked()
+
+	if n.auctionOver {
+		n.Clock++
+
+		response := &pb.AcknowledgementMSG{
+			Clock:        n.Clock,
+			Outcome:      pb.BidOutcome_BID_FAIL,
+			Message:      "The auction is over",
+			LeaderId:     int32(n.currentLeader),
+			StateVersion: n.stateVersion,
+		}
+
+		n.processedRequests[msg.GetRequestId()] = response
+		return response, nil
+	}
+
+	if msg.GetAmount() <= n.highestBid {
+		n.Clock++
+
+		response := &pb.AcknowledgementMSG{
+			Clock:        n.Clock,
+			Outcome:      pb.BidOutcome_BID_FAIL,
+			Message:      "The bid must be higher than the current highest bid",
+			LeaderId:     int32(n.currentLeader),
+			StateVersion: n.stateVersion,
+		}
+
+		n.processedRequests[msg.GetRequestId()] = response
+		return response, nil
+	}
+
+	n.highestBid = msg.GetAmount()
+	n.highestBidder = msg.GetBidderId()
+	n.stateVersion++
+	n.Clock++
+
+	response := &pb.AcknowledgementMSG{
+		Clock:        n.Clock,
+		Outcome:      pb.BidOutcome_BID_SUCCESS,
+		Message:      "The bid was accepted",
+		LeaderId:     int32(n.currentLeader),
+		StateVersion: n.stateVersion,
+	}
+
+	n.processedRequests[msg.GetRequestId()] = response
+
+	log.Printf(
+		"logical time %d: node %d accepted bid %d from bidder %q as state version %d",
+		n.Clock,
+		n.id,
+		n.highestBid,
+		n.highestBidder,
+		n.stateVersion,
+	)
+
+	return response, nil
+}
+
+func (n *Node) Result(
+	ctx context.Context,
+	msg *pb.AcknowledgementMSG,
+) (*pb.ResultMSG, error) {
+	n.Mutex.Lock()
+	defer n.Mutex.Unlock()
+
+	n.Clock = max(n.Clock, msg.GetClock()) + 1
+	n.updateAuctionStatusLocked()
+
+	log.Printf(
+		"logical time %d: node %d returned auction state version %d",
+		n.Clock,
+		n.id,
+		n.stateVersion,
+	)
+
+	n.Clock++
+
+	return &pb.ResultMSG{
+		Clock:        n.Clock,
+		Amount:       n.highestBid,
+		BidderId:     n.highestBidder,
+		AuctionOver:  n.auctionOver,
+		LeaderId:     int32(n.currentLeader),
+		StateVersion: n.stateVersion,
+	}, nil
+}
+
+func (n *Node) RequestLeader(
+	ctx context.Context,
+	msg *pb.AcknowledgementMSG,
+) (*pb.IdentifierMSG, error) {
+	n.Mutex.Lock()
+	defer n.Mutex.Unlock()
+
+	n.Clock = max(n.Clock, msg.GetClock()) + 1
+
+	log.Printf(
+		"logical time %d: node %d received a leader information request",
+		n.Clock,
+		n.id,
+	)
+
+	n.Clock++
+
+	return &pb.IdentifierMSG{
+		Clock:      n.Clock,
+		Id:         int32(n.currentLeader),
+		LeaderTerm: n.leaderTerm,
+	}, nil
+}
+
+func (n *Node) Ping(
+	ctx context.Context,
+	msg *pb.AcknowledgementMSG,
+) (*pb.AcknowledgementMSG, error) {
+	n.Mutex.Lock()
+	defer n.Mutex.Unlock()
+
+	n.Clock = max(n.Clock, msg.GetClock()) + 1
+	n.Clock++
+
+	return &pb.AcknowledgementMSG{
+		Clock:        n.Clock,
+		Outcome:      pb.BidOutcome_BID_SUCCESS,
+		Message:      "Node is alive",
+		LeaderId:     int32(n.currentLeader),
+		StateVersion: n.stateVersion,
+	}, nil
+}
+
+func (n *Node) updateAuctionStatusLocked() {
+	if n.auctionDeadlineUnixMs == 0 {
+		return
+	}
+
+	if !n.auctionOver &&
+		time.Now().UnixMilli() >= n.auctionDeadlineUnixMs {
+		n.auctionOver = true
+
+		log.Printf(
+			"logical time %d: auction ended with bidder %q winning with bid %d",
+			n.Clock,
+			n.highestBidder,
+			n.highestBid,
+		)
+	}
 }
