@@ -23,7 +23,8 @@ const (
 
 type BidMSG struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Amount        int32                  `protobuf:"varint,1,opt,name=amount,proto3" json:"amount,omitempty"`
+	Clock         int32                  `protobuf:"varint,1,opt,name=clock,proto3" json:"clock,omitempty"`
+	Amount        int32                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -58,6 +59,13 @@ func (*BidMSG) Descriptor() ([]byte, []int) {
 	return file_grpc_proto_proto_rawDescGZIP(), []int{0}
 }
 
+func (x *BidMSG) GetClock() int32 {
+	if x != nil {
+		return x.Clock
+	}
+	return 0
+}
+
 func (x *BidMSG) GetAmount() int32 {
 	if x != nil {
 		return x.Amount
@@ -67,8 +75,9 @@ func (x *BidMSG) GetAmount() int32 {
 
 type ResultMSG struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Amount        int32                  `protobuf:"varint,1,opt,name=amount,proto3" json:"amount,omitempty"`
-	AuctionOver   bool                   `protobuf:"varint,2,opt,name=auctionOver,proto3" json:"auctionOver,omitempty"`
+	Clock         int32                  `protobuf:"varint,1,opt,name=clock,proto3" json:"clock,omitempty"`
+	Amount        int32                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	AuctionOver   bool                   `protobuf:"varint,3,opt,name=auctionOver,proto3" json:"auctionOver,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -103,6 +112,13 @@ func (*ResultMSG) Descriptor() ([]byte, []int) {
 	return file_grpc_proto_proto_rawDescGZIP(), []int{1}
 }
 
+func (x *ResultMSG) GetClock() int32 {
+	if x != nil {
+		return x.Clock
+	}
+	return 0
+}
+
 func (x *ResultMSG) GetAmount() int32 {
 	if x != nil {
 		return x.Amount
@@ -119,7 +135,8 @@ func (x *ResultMSG) GetAuctionOver() bool {
 
 type IdentifierMSG struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int32                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Clock         int32                  `protobuf:"varint,1,opt,name=clock,proto3" json:"clock,omitempty"`
+	Id            int32                  `protobuf:"varint,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -154,6 +171,13 @@ func (*IdentifierMSG) Descriptor() ([]byte, []int) {
 	return file_grpc_proto_proto_rawDescGZIP(), []int{2}
 }
 
+func (x *IdentifierMSG) GetClock() int32 {
+	if x != nil {
+		return x.Clock
+	}
+	return 0
+}
+
 func (x *IdentifierMSG) GetId() int32 {
 	if x != nil {
 		return x.Id
@@ -161,26 +185,27 @@ func (x *IdentifierMSG) GetId() int32 {
 	return 0
 }
 
-type EmptyMSG struct {
+type AcknowledgementMSG struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Clock         int32                  `protobuf:"varint,1,opt,name=clock,proto3" json:"clock,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *EmptyMSG) Reset() {
-	*x = EmptyMSG{}
+func (x *AcknowledgementMSG) Reset() {
+	*x = AcknowledgementMSG{}
 	mi := &file_grpc_proto_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *EmptyMSG) String() string {
+func (x *AcknowledgementMSG) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*EmptyMSG) ProtoMessage() {}
+func (*AcknowledgementMSG) ProtoMessage() {}
 
-func (x *EmptyMSG) ProtoReflect() protoreflect.Message {
+func (x *AcknowledgementMSG) ProtoReflect() protoreflect.Message {
 	mi := &file_grpc_proto_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -192,33 +217,43 @@ func (x *EmptyMSG) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use EmptyMSG.ProtoReflect.Descriptor instead.
-func (*EmptyMSG) Descriptor() ([]byte, []int) {
+// Deprecated: Use AcknowledgementMSG.ProtoReflect.Descriptor instead.
+func (*AcknowledgementMSG) Descriptor() ([]byte, []int) {
 	return file_grpc_proto_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *AcknowledgementMSG) GetClock() int32 {
+	if x != nil {
+		return x.Clock
+	}
+	return 0
 }
 
 var File_grpc_proto_proto protoreflect.FileDescriptor
 
 const file_grpc_proto_proto_rawDesc = "" +
 	"\n" +
-	"\x10grpc/proto.proto\" \n" +
-	"\x06bidMSG\x12\x16\n" +
-	"\x06amount\x18\x01 \x01(\x05R\x06amount\"E\n" +
-	"\tresultMSG\x12\x16\n" +
-	"\x06amount\x18\x01 \x01(\x05R\x06amount\x12 \n" +
-	"\vauctionOver\x18\x02 \x01(\bR\vauctionOver\"\x1f\n" +
-	"\rIdentifierMSG\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x05R\x02id\"\n" +
-	"\n" +
-	"\bemptyMSG2\xfd\x01\n" +
-	"\aAuction\x12\x19\n" +
-	"\x03bid\x12\a.bidMSG\x1a\t.emptyMSG\x12\x1f\n" +
-	"\x06Result\x12\t.emptyMSG\x1a\n" +
-	".resultMSG\x12%\n" +
-	"\belection\x12\x0e.IdentifierMSG\x1a\t.emptyMSG\x12)\n" +
-	"\fsetnewLeader\x12\x0e.IdentifierMSG\x1a\t.emptyMSG\x12*\n" +
-	"\rrequestLeader\x12\t.emptyMSG\x1a\x0e.IdentifierMSG\x12\x1c\n" +
-	"\x04ping\x12\t.emptyMSG\x1a\t.emptyMSG\x12\x1a\n" +
+	"\x10grpc/proto.proto\"6\n" +
+	"\x06bidMSG\x12\x14\n" +
+	"\x05clock\x18\x01 \x01(\x05R\x05clock\x12\x16\n" +
+	"\x06amount\x18\x02 \x01(\x05R\x06amount\"[\n" +
+	"\tresultMSG\x12\x14\n" +
+	"\x05clock\x18\x01 \x01(\x05R\x05clock\x12\x16\n" +
+	"\x06amount\x18\x02 \x01(\x05R\x06amount\x12 \n" +
+	"\vauctionOver\x18\x03 \x01(\bR\vauctionOver\"5\n" +
+	"\rIdentifierMSG\x12\x14\n" +
+	"\x05clock\x18\x01 \x01(\x05R\x05clock\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\x05R\x02id\"*\n" +
+	"\x12acknowledgementMSG\x12\x14\n" +
+	"\x05clock\x18\x01 \x01(\x05R\x05clock2\xc3\x02\n" +
+	"\aAuction\x12#\n" +
+	"\x03bid\x12\a.bidMSG\x1a\x13.acknowledgementMSG\x12)\n" +
+	"\x06Result\x12\x13.acknowledgementMSG\x1a\n" +
+	".resultMSG\x12/\n" +
+	"\belection\x12\x0e.IdentifierMSG\x1a\x13.acknowledgementMSG\x123\n" +
+	"\fsetnewLeader\x12\x0e.IdentifierMSG\x1a\x13.acknowledgementMSG\x124\n" +
+	"\rrequestLeader\x12\x13.acknowledgementMSG\x1a\x0e.IdentifierMSG\x120\n" +
+	"\x04ping\x12\x13.acknowledgementMSG\x1a\x13.acknowledgementMSG\x12\x1a\n" +
 	"\x06update\x12\a.bidMSG\x1a\a.bidMSGB\x14Z\x12handin4/grpc/protob\x06proto3"
 
 var (
@@ -235,25 +270,25 @@ func file_grpc_proto_proto_rawDescGZIP() []byte {
 
 var file_grpc_proto_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_grpc_proto_proto_goTypes = []any{
-	(*BidMSG)(nil),        // 0: bidMSG
-	(*ResultMSG)(nil),     // 1: resultMSG
-	(*IdentifierMSG)(nil), // 2: IdentifierMSG
-	(*EmptyMSG)(nil),      // 3: emptyMSG
+	(*BidMSG)(nil),             // 0: bidMSG
+	(*ResultMSG)(nil),          // 1: resultMSG
+	(*IdentifierMSG)(nil),      // 2: IdentifierMSG
+	(*AcknowledgementMSG)(nil), // 3: acknowledgementMSG
 }
 var file_grpc_proto_proto_depIdxs = []int32{
 	0, // 0: Auction.bid:input_type -> bidMSG
-	3, // 1: Auction.Result:input_type -> emptyMSG
+	3, // 1: Auction.Result:input_type -> acknowledgementMSG
 	2, // 2: Auction.election:input_type -> IdentifierMSG
 	2, // 3: Auction.setnewLeader:input_type -> IdentifierMSG
-	3, // 4: Auction.requestLeader:input_type -> emptyMSG
-	3, // 5: Auction.ping:input_type -> emptyMSG
+	3, // 4: Auction.requestLeader:input_type -> acknowledgementMSG
+	3, // 5: Auction.ping:input_type -> acknowledgementMSG
 	0, // 6: Auction.update:input_type -> bidMSG
-	3, // 7: Auction.bid:output_type -> emptyMSG
+	3, // 7: Auction.bid:output_type -> acknowledgementMSG
 	1, // 8: Auction.Result:output_type -> resultMSG
-	3, // 9: Auction.election:output_type -> emptyMSG
-	3, // 10: Auction.setnewLeader:output_type -> emptyMSG
+	3, // 9: Auction.election:output_type -> acknowledgementMSG
+	3, // 10: Auction.setnewLeader:output_type -> acknowledgementMSG
 	2, // 11: Auction.requestLeader:output_type -> IdentifierMSG
-	3, // 12: Auction.ping:output_type -> emptyMSG
+	3, // 12: Auction.ping:output_type -> acknowledgementMSG
 	0, // 13: Auction.update:output_type -> bidMSG
 	7, // [7:14] is the sub-list for method output_type
 	0, // [0:7] is the sub-list for method input_type

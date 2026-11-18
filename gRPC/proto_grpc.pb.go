@@ -32,12 +32,12 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AuctionClient interface {
-	Bid(ctx context.Context, in *BidMSG, opts ...grpc.CallOption) (*EmptyMSG, error)
-	Result(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*ResultMSG, error)
-	Election(ctx context.Context, in *IdentifierMSG, opts ...grpc.CallOption) (*EmptyMSG, error)
-	SetnewLeader(ctx context.Context, in *IdentifierMSG, opts ...grpc.CallOption) (*EmptyMSG, error)
-	RequestLeader(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*IdentifierMSG, error)
-	Ping(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*EmptyMSG, error)
+	Bid(ctx context.Context, in *BidMSG, opts ...grpc.CallOption) (*AcknowledgementMSG, error)
+	Result(ctx context.Context, in *AcknowledgementMSG, opts ...grpc.CallOption) (*ResultMSG, error)
+	Election(ctx context.Context, in *IdentifierMSG, opts ...grpc.CallOption) (*AcknowledgementMSG, error)
+	SetnewLeader(ctx context.Context, in *IdentifierMSG, opts ...grpc.CallOption) (*AcknowledgementMSG, error)
+	RequestLeader(ctx context.Context, in *AcknowledgementMSG, opts ...grpc.CallOption) (*IdentifierMSG, error)
+	Ping(ctx context.Context, in *AcknowledgementMSG, opts ...grpc.CallOption) (*AcknowledgementMSG, error)
 	Update(ctx context.Context, in *BidMSG, opts ...grpc.CallOption) (*BidMSG, error)
 }
 
@@ -49,9 +49,9 @@ func NewAuctionClient(cc grpc.ClientConnInterface) AuctionClient {
 	return &auctionClient{cc}
 }
 
-func (c *auctionClient) Bid(ctx context.Context, in *BidMSG, opts ...grpc.CallOption) (*EmptyMSG, error) {
+func (c *auctionClient) Bid(ctx context.Context, in *BidMSG, opts ...grpc.CallOption) (*AcknowledgementMSG, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EmptyMSG)
+	out := new(AcknowledgementMSG)
 	err := c.cc.Invoke(ctx, Auction_Bid_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -59,7 +59,7 @@ func (c *auctionClient) Bid(ctx context.Context, in *BidMSG, opts ...grpc.CallOp
 	return out, nil
 }
 
-func (c *auctionClient) Result(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*ResultMSG, error) {
+func (c *auctionClient) Result(ctx context.Context, in *AcknowledgementMSG, opts ...grpc.CallOption) (*ResultMSG, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ResultMSG)
 	err := c.cc.Invoke(ctx, Auction_Result_FullMethodName, in, out, cOpts...)
@@ -69,9 +69,9 @@ func (c *auctionClient) Result(ctx context.Context, in *EmptyMSG, opts ...grpc.C
 	return out, nil
 }
 
-func (c *auctionClient) Election(ctx context.Context, in *IdentifierMSG, opts ...grpc.CallOption) (*EmptyMSG, error) {
+func (c *auctionClient) Election(ctx context.Context, in *IdentifierMSG, opts ...grpc.CallOption) (*AcknowledgementMSG, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EmptyMSG)
+	out := new(AcknowledgementMSG)
 	err := c.cc.Invoke(ctx, Auction_Election_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -79,9 +79,9 @@ func (c *auctionClient) Election(ctx context.Context, in *IdentifierMSG, opts ..
 	return out, nil
 }
 
-func (c *auctionClient) SetnewLeader(ctx context.Context, in *IdentifierMSG, opts ...grpc.CallOption) (*EmptyMSG, error) {
+func (c *auctionClient) SetnewLeader(ctx context.Context, in *IdentifierMSG, opts ...grpc.CallOption) (*AcknowledgementMSG, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EmptyMSG)
+	out := new(AcknowledgementMSG)
 	err := c.cc.Invoke(ctx, Auction_SetnewLeader_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -89,7 +89,7 @@ func (c *auctionClient) SetnewLeader(ctx context.Context, in *IdentifierMSG, opt
 	return out, nil
 }
 
-func (c *auctionClient) RequestLeader(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*IdentifierMSG, error) {
+func (c *auctionClient) RequestLeader(ctx context.Context, in *AcknowledgementMSG, opts ...grpc.CallOption) (*IdentifierMSG, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(IdentifierMSG)
 	err := c.cc.Invoke(ctx, Auction_RequestLeader_FullMethodName, in, out, cOpts...)
@@ -99,9 +99,9 @@ func (c *auctionClient) RequestLeader(ctx context.Context, in *EmptyMSG, opts ..
 	return out, nil
 }
 
-func (c *auctionClient) Ping(ctx context.Context, in *EmptyMSG, opts ...grpc.CallOption) (*EmptyMSG, error) {
+func (c *auctionClient) Ping(ctx context.Context, in *AcknowledgementMSG, opts ...grpc.CallOption) (*AcknowledgementMSG, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EmptyMSG)
+	out := new(AcknowledgementMSG)
 	err := c.cc.Invoke(ctx, Auction_Ping_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -123,12 +123,12 @@ func (c *auctionClient) Update(ctx context.Context, in *BidMSG, opts ...grpc.Cal
 // All implementations must embed UnimplementedAuctionServer
 // for forward compatibility.
 type AuctionServer interface {
-	Bid(context.Context, *BidMSG) (*EmptyMSG, error)
-	Result(context.Context, *EmptyMSG) (*ResultMSG, error)
-	Election(context.Context, *IdentifierMSG) (*EmptyMSG, error)
-	SetnewLeader(context.Context, *IdentifierMSG) (*EmptyMSG, error)
-	RequestLeader(context.Context, *EmptyMSG) (*IdentifierMSG, error)
-	Ping(context.Context, *EmptyMSG) (*EmptyMSG, error)
+	Bid(context.Context, *BidMSG) (*AcknowledgementMSG, error)
+	Result(context.Context, *AcknowledgementMSG) (*ResultMSG, error)
+	Election(context.Context, *IdentifierMSG) (*AcknowledgementMSG, error)
+	SetnewLeader(context.Context, *IdentifierMSG) (*AcknowledgementMSG, error)
+	RequestLeader(context.Context, *AcknowledgementMSG) (*IdentifierMSG, error)
+	Ping(context.Context, *AcknowledgementMSG) (*AcknowledgementMSG, error)
 	Update(context.Context, *BidMSG) (*BidMSG, error)
 	mustEmbedUnimplementedAuctionServer()
 }
@@ -140,22 +140,22 @@ type AuctionServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAuctionServer struct{}
 
-func (UnimplementedAuctionServer) Bid(context.Context, *BidMSG) (*EmptyMSG, error) {
+func (UnimplementedAuctionServer) Bid(context.Context, *BidMSG) (*AcknowledgementMSG, error) {
 	return nil, status.Error(codes.Unimplemented, "method Bid not implemented")
 }
-func (UnimplementedAuctionServer) Result(context.Context, *EmptyMSG) (*ResultMSG, error) {
+func (UnimplementedAuctionServer) Result(context.Context, *AcknowledgementMSG) (*ResultMSG, error) {
 	return nil, status.Error(codes.Unimplemented, "method Result not implemented")
 }
-func (UnimplementedAuctionServer) Election(context.Context, *IdentifierMSG) (*EmptyMSG, error) {
+func (UnimplementedAuctionServer) Election(context.Context, *IdentifierMSG) (*AcknowledgementMSG, error) {
 	return nil, status.Error(codes.Unimplemented, "method Election not implemented")
 }
-func (UnimplementedAuctionServer) SetnewLeader(context.Context, *IdentifierMSG) (*EmptyMSG, error) {
+func (UnimplementedAuctionServer) SetnewLeader(context.Context, *IdentifierMSG) (*AcknowledgementMSG, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetnewLeader not implemented")
 }
-func (UnimplementedAuctionServer) RequestLeader(context.Context, *EmptyMSG) (*IdentifierMSG, error) {
+func (UnimplementedAuctionServer) RequestLeader(context.Context, *AcknowledgementMSG) (*IdentifierMSG, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestLeader not implemented")
 }
-func (UnimplementedAuctionServer) Ping(context.Context, *EmptyMSG) (*EmptyMSG, error) {
+func (UnimplementedAuctionServer) Ping(context.Context, *AcknowledgementMSG) (*AcknowledgementMSG, error) {
 	return nil, status.Error(codes.Unimplemented, "method Ping not implemented")
 }
 func (UnimplementedAuctionServer) Update(context.Context, *BidMSG) (*BidMSG, error) {
@@ -201,7 +201,7 @@ func _Auction_Bid_Handler(srv interface{}, ctx context.Context, dec func(interfa
 }
 
 func _Auction_Result_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EmptyMSG)
+	in := new(AcknowledgementMSG)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func _Auction_Result_Handler(srv interface{}, ctx context.Context, dec func(inte
 		FullMethod: Auction_Result_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AuctionServer).Result(ctx, req.(*EmptyMSG))
+		return srv.(AuctionServer).Result(ctx, req.(*AcknowledgementMSG))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -255,7 +255,7 @@ func _Auction_SetnewLeader_Handler(srv interface{}, ctx context.Context, dec fun
 }
 
 func _Auction_RequestLeader_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EmptyMSG)
+	in := new(AcknowledgementMSG)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -267,13 +267,13 @@ func _Auction_RequestLeader_Handler(srv interface{}, ctx context.Context, dec fu
 		FullMethod: Auction_RequestLeader_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AuctionServer).RequestLeader(ctx, req.(*EmptyMSG))
+		return srv.(AuctionServer).RequestLeader(ctx, req.(*AcknowledgementMSG))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _Auction_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EmptyMSG)
+	in := new(AcknowledgementMSG)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func _Auction_Ping_Handler(srv interface{}, ctx context.Context, dec func(interf
 		FullMethod: Auction_Ping_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AuctionServer).Ping(ctx, req.(*EmptyMSG))
+		return srv.(AuctionServer).Ping(ctx, req.(*AcknowledgementMSG))
 	}
 	return interceptor(ctx, in, info, handler)
 }

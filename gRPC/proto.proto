@@ -3,25 +3,30 @@ option go_package = "handin4/grpc/proto";
 
 
 message bidMSG {
-    int32 amount = 1;
+    int32 clock = 1;
+    int32 amount = 2;
 }
 message resultMSG {
-    int32 amount = 1;
-    bool auctionOver = 2;
+    int32 clock = 1;
+    int32 amount = 2;
+    bool auctionOver = 3;
 }
 message IdentifierMSG {
-    int32 id = 1;
+    int32 clock = 1;
+    int32 id = 2;
 }
-message emptyMSG {}
+message acknowledgementMSG {
+    int32 clock = 1;
+}
 
 
 
 service Auction {
-    rpc bid (bidMSG) returns (emptyMSG);
-    rpc Result (emptyMSG) returns (resultMSG);
-    rpc election(IdentifierMSG) returns (emptyMSG);
-    rpc setnewLeader(IdentifierMSG) returns (emptyMSG);
-    rpc requestLeader(emptyMSG) returns (IdentifierMSG);
-    rpc ping(emptyMSG) returns (emptyMSG);
+    rpc bid (bidMSG) returns (acknowledgementMSG);
+    rpc Result (acknowledgementMSG) returns (resultMSG);
+    rpc election(IdentifierMSG) returns (acknowledgementMSG);
+    rpc setnewLeader(IdentifierMSG) returns (acknowledgementMSG);
+    rpc requestLeader(acknowledgementMSG) returns (IdentifierMSG);
+    rpc ping(acknowledgementMSG) returns (acknowledgementMSG);
     rpc update(bidMSG) returns (bidMSG);
 }
