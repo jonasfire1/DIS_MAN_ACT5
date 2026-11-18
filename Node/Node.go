@@ -215,10 +215,14 @@ func (n *Node) StartElection() {
 func (n *Node) AnounceLeadership() {
 
 	log.Println("Won leadership election")
+	n.Mutex.Lock()
+	n.currentPRM = n.id
+	n.Mutex.Unlock()
 	identifier := pb.IdentifierMSG{Id: int32(n.id)}
 	for i := 0; i < n.id; i++ {
 		go n.Clients[i].SetnewLeader(context.Background(), &identifier)
 	}
+
 }
 
 func (n *Node) Election(ctx context.Context, msg *pb.IdentifierMSG) (*pb.EmptyMSG, error) {
@@ -230,6 +234,6 @@ func (n *Node) Election(ctx context.Context, msg *pb.IdentifierMSG) (*pb.EmptyMS
 func (n *Node) SetnewLeader(ctx context.Context, msg *pb.IdentifierMSG) (*pb.EmptyMSG, error) {
 
 	n.currentPRM = int(msg.Id)
-	log.Println("leader set to" + string(msg.Id))
+	log.Printf("PRM set to %d", msg.Id)
 	return &pb.EmptyMSG{}, nil // return acknowledgement
 }
