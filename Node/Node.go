@@ -2,288 +2,413 @@ package main
 
 import (
 	"context"
+	"log"
 	"net"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	pb "handin5/gRPC"
-	"log"
-	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const (
+	numberOfNodes             = 4
+	firstNodePort             = 5050
+	rpcTimeout                = 1 * time.Second
+	leaderAnnouncementTimeout = 2 * time.Second
+)
+
 type Node struct {
 	pb.UnimplementedAuctionServer
-	Mutex           sync.Mutex
-	Clock           int32
-	Clients         [4]pb.AuctionClient
+	Mutex sync.Mutex
+	Clock int32
+
+	Clients     [numberOfNodes]pb.AuctionClient
+	Connections [numberOfNodes]*grpc.ClientConn
+
 	id              int
-	currentPRM      int
-	electionongoing bool // prevents
+	currentLeader   int
+	electionOngoing bool
 }
 
 func main() {
-
 	if len(os.Args) < 2 {
-		log.Fatal("Run the client with: go run ./client <node_id>")
+		log.Fatal("Run the node with: go run ./Node <node_id>")
+	}
+
+	nodeID, err := strconv.Atoi(os.Args[1])
+	if err != nil || nodeID < 0 || nodeID >= numberOfNodes {
+		log.Fatal("The node identifier must be an integer from 0 through 3")
 	}
 
 	node := &Node{
-		Clock: 0,
+		id:            nodeID,
+		Clock:         0,
+		currentLeader: -1,
 	}
-	var node_address string
 
-	val, err := strconv.Atoi(os.Args[1])
+	nodeAddress := ":" + strconv.Itoa(firstNodePort+node.id)
+
+	connectToPeers(node)
+	defer closeConnections(node)
+
+	listener, err := net.Listen("tcp", nodeAddress)
 	if err != nil {
-		log.Fatal("Run the client with: go run ./client <node_id> (an integer 1 through 4)")
+		log.Fatalf("Could not listen on %s: %v", nodeAddress, err)
 	}
 
-	switch val {
-	case 0:
-		node.id = 0
-		node_address = ":5050"
-
-		conn1, err := grpc.NewClient(
-			"localhost:5051",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		node.Clients[1] = pb.NewAuctionClient(conn1)
-
-		conn2, err := grpc.NewClient(
-			"localhost:5052",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		node.Clients[2] = pb.NewAuctionClient(conn2)
-
-		conn3, err := grpc.NewClient(
-			"localhost:5053",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		node.Clients[3] = pb.NewAuctionClient(conn3)
-
-	case 1:
-		node.id = 1
-		node_address = ":5051"
-
-		conn0, err := grpc.NewClient(
-			"localhost:5050",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		node.Clients[0] = pb.NewAuctionClient(conn0)
-
-		conn2, err := grpc.NewClient(
-			"localhost:5052",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		node.Clients[2] = pb.NewAuctionClient(conn2)
-
-		conn3, err := grpc.NewClient(
-			"localhost:5053",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		node.Clients[3] = pb.NewAuctionClient(conn3)
-	case 2:
-		node.id = 2
-		node_address = ":5052"
-
-		conn0, err := grpc.NewClient(
-			"localhost:5050",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		node.Clients[0] = pb.NewAuctionClient(conn0)
-
-		conn1, err := grpc.NewClient(
-			"localhost:5051",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		node.Clients[1] = pb.NewAuctionClient(conn1)
-
-		conn3, err := grpc.NewClient(
-			"localhost:5053",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		node.Clients[3] = pb.NewAuctionClient(conn3)
-	case 3:
-		node.id = 3
-		node_address = ":5053"
-
-		conn0, err := grpc.NewClient(
-			"localhost:5050",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		node.Clients[0] = pb.NewAuctionClient(conn0)
-
-		conn1, err := grpc.NewClient(
-			"localhost:5051",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		node.Clients[1] = pb.NewAuctionClient(conn1)
-
-		conn2, err := grpc.NewClient(
-			"localhost:5052",
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-		node.Clients[2] = pb.NewAuctionClient(conn2)
-
-	default:
-		log.Fatal("the provided node identifier is invalid")
-	}
-
-	listener, err := net.Listen("tcp", node_address)
-	if err != nil {
-		log.Fatal(err)
-	}
 	grpcServer := grpc.NewServer()
 	pb.RegisterAuctionServer(grpcServer, node)
 
+	node.Mutex.Lock()
+	node.Clock++
+	log.Printf(
+		"logical time %d: node %d started on port %d",
+		node.Clock,
+		node.id,
+		firstNodePort+node.id,
+	)
+	node.Mutex.Unlock()
+
 	go func() {
-		node.Mutex.Lock()
-		node.Clock = node.Clock + 1
-		log.Printf("logical time %d: Server SERVER_STARTED Port="+node_address, node.Clock)
-		node.Mutex.Unlock()
-		if err := grpcServer.Serve(listener); err != nil {
-			log.Fatal(err)
-		}
+		time.Sleep(500 * time.Millisecond)
+		node.StartElection()
 	}()
 
-	node.StartElection()
-	for {
-
+	if err := grpcServer.Serve(listener); err != nil {
+		log.Fatal(err)
 	}
 }
 
-// call all clients with greater id than self, and if no responses are recieved, declare self new leader
+func connectToPeers(node *Node) {
+	for peerID := 0; peerID < numberOfNodes; peerID++ {
+		if peerID == node.id {
+			continue
+		}
+
+		address := "localhost:" + strconv.Itoa(firstNodePort+peerID)
+
+		connection, err := grpc.NewClient(
+			address,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			log.Fatalf(
+				"Could not create connection from node %d to node %d: %v",
+				node.id,
+				peerID,
+				err,
+			)
+		}
+
+		node.Connections[peerID] = connection
+		node.Clients[peerID] = pb.NewAuctionClient(connection)
+	}
+}
+
+func closeConnections(node *Node) {
+	for peerID, connection := range node.Connections {
+		if connection == nil {
+			continue
+		}
+
+		if err := connection.Close(); err != nil {
+			log.Printf(
+				"Could not close connection to node %d: %v",
+				peerID,
+				err,
+			)
+		}
+	}
+}
+
+// StartElection implements the Bully election algorithm.
+//
+// The node sends election messages to all nodes with higher IDs.
+// If none respond, this node declares itself the leader.
+// If a higher node responds, this node waits for that node or another
+// higher node to announce the new leader.
 func (n *Node) StartElection() {
-	if n.electionongoing {
+	n.Mutex.Lock()
+
+	if n.electionOngoing {
+		n.Mutex.Unlock()
 		return
 	}
-	n.Mutex.Lock()
-	n.electionongoing = true
-	n.Clock = n.Clock + 1
-	log.Printf("logical time %d: starting election", n.Clock)
+
+	n.electionOngoing = true
+	n.currentLeader = -1
+	n.Clock++
+
+	log.Printf(
+		"logical time %d: node %d started an election",
+		n.Clock,
+		n.id,
+	)
+
 	n.Mutex.Unlock()
 
-	var peersChecked sync.WaitGroup
-	peersChecked.Add(len(n.Clients) - n.id - 1) // the amount of ids higher
-	higherFound := false
-	identifier := pb.IdentifierMSG{Id: int32(n.id)}
-	for i := n.id + 1; i < len(n.Clients); i++ {
-		go func() {
-			n.Mutex.Lock()
-			n.Clock = n.Clock + 1
-			log.Printf("logical time %d: sent election call to %d", n.Clock, i)
-			n.Mutex.Unlock()
+	numberOfHigherNodes := numberOfNodes - n.id - 1
 
-			defer peersChecked.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
-			response, err := n.Clients[i].Election(ctx, &identifier)
-			if err == nil && response != nil {
-				higherFound = true
-				n.Mutex.Lock()
-				n.Clock = max(n.Clock, response.GetClock()) + 1
-				n.Clock = n.Clock + 1
-				log.Printf("logical time %d: recieved election call response from %d", n.Clock, i)
-				n.Mutex.Unlock()
-			} else {
-				n.Mutex.Lock()
-				n.Clock = n.Clock + 1
-				log.Printf("logical time %d: election call response to %d timed out", n.Clock, i)
-				n.Mutex.Unlock()
-			}
-		}()
+	if numberOfHigherNodes == 0 {
+		n.AnnounceLeadership()
+		return
 	}
-	peersChecked.Wait() // wait until all calls either respond or timeout.
-	if higherFound == false {
-		n.AnounceLeadership()
-	} else {
+
+	responses := make(chan bool, numberOfHigherNodes)
+
+	for peerID := n.id + 1; peerID < numberOfNodes; peerID++ {
+		go n.sendElectionRequest(peerID, responses)
+	}
+
+	higherNodeResponded := false
+
+	for checked := 0; checked < numberOfHigherNodes; checked++ {
+		if <-responses {
+			higherNodeResponded = true
+		}
+	}
+
+	if !higherNodeResponded {
+		n.AnnounceLeadership()
+		return
+	}
+
+	n.Mutex.Lock()
+	n.Clock++
+
+	log.Printf(
+		"logical time %d: node %d received a response from a higher node and is waiting for a leader announcement",
+		n.Clock,
+		n.id,
+	)
+
+	n.Mutex.Unlock()
+
+	go n.waitForLeaderAnnouncement()
+}
+
+func (n *Node) sendElectionRequest(peerID int, responses chan<- bool) {
+	n.Mutex.Lock()
+	n.Clock++
+
+	request := &pb.IdentifierMSG{
+		Id:    int32(n.id),
+		Clock: n.Clock,
+	}
+
+	log.Printf(
+		"logical time %d: node %d sent an election request to node %d",
+		n.Clock,
+		n.id,
+		peerID,
+	)
+
+	n.Mutex.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+	defer cancel()
+
+	response, err := n.Clients[peerID].Election(ctx, request)
+	if err != nil {
 		n.Mutex.Lock()
-		n.electionongoing = false
-		n.Clock = n.Clock + 1
-		log.Printf("logical time %d: conceded attempt at election", n.Clock)
+		n.Clock++
+
+		log.Printf(
+			"logical time %d: election request from node %d to node %d timed out",
+			n.Clock,
+			n.id,
+			peerID,
+		)
+
 		n.Mutex.Unlock()
+
+		responses <- false
+		return
+	}
+
+	n.Mutex.Lock()
+	n.Clock = max(n.Clock, response.GetClock()) + 1
+
+	log.Printf(
+		"logical time %d: node %d received an election response from node %d",
+		n.Clock,
+		n.id,
+		peerID,
+	)
+
+	n.Mutex.Unlock()
+
+	responses <- true
+}
+
+func (n *Node) waitForLeaderAnnouncement() {
+	timer := time.NewTimer(leaderAnnouncementTimeout)
+	defer timer.Stop()
+
+	<-timer.C
+
+	n.Mutex.Lock()
+
+	if n.currentLeader != -1 {
+		n.electionOngoing = false
+		n.Mutex.Unlock()
+		return
+	}
+
+	n.electionOngoing = false
+	n.Clock++
+
+	log.Printf(
+		"logical time %d: node %d did not receive a leader announcement and will start a new election",
+		n.Clock,
+		n.id,
+	)
+
+	n.Mutex.Unlock()
+
+	n.StartElection()
+}
+
+func (n *Node) AnnounceLeadership() {
+	n.Mutex.Lock()
+
+	n.electionOngoing = false
+	n.currentLeader = n.id
+	n.Clock++
+
+	log.Printf(
+		"logical time %d: node %d declared itself the leader",
+		n.Clock,
+		n.id,
+	)
+
+	n.Mutex.Unlock()
+
+	for peerID := 0; peerID < numberOfNodes; peerID++ {
+		if peerID == n.id {
+			continue
+		}
+
+		go n.sendLeaderAnnouncement(peerID)
 	}
 }
 
-func (n *Node) AnounceLeadership() {
-
+func (n *Node) sendLeaderAnnouncement(peerID int) {
 	n.Mutex.Lock()
-	n.electionongoing = false
-	n.Clock = n.Clock + 1
-	n.currentPRM = n.id
-	log.Printf("logical time %d: Declares election victory", n.Clock)
-	n.Mutex.Unlock()
-	identifier := pb.IdentifierMSG{Id: int32(n.id)}
-	for i := 0; i < n.id; i++ {
-		n.Mutex.Lock()
-		n.Clock = n.Clock + 1
-		log.Printf("logical time %d: sends declaration of leadership to %d", n.Clock, i)
-		n.Mutex.Unlock()
-		go n.Clients[i].SetnewLeader(context.Background(), &identifier)
+	n.Clock++
+
+	request := &pb.IdentifierMSG{
+		Id:    int32(n.id),
+		Clock: n.Clock,
 	}
 
+	log.Printf(
+		"logical time %d: node %d sent a leader announcement to node %d",
+		n.Clock,
+		n.id,
+		peerID,
+	)
+
+	n.Mutex.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+	defer cancel()
+
+	response, err := n.Clients[peerID].SetnewLeader(ctx, request)
+	if err != nil {
+		n.Mutex.Lock()
+		n.Clock++
+
+		log.Printf(
+			"logical time %d: node %d could not announce leadership to node %d",
+			n.Clock,
+			n.id,
+			peerID,
+		)
+
+		n.Mutex.Unlock()
+		return
+	}
+
+	n.Mutex.Lock()
+	n.Clock = max(n.Clock, response.GetClock()) + 1
+
+	log.Printf(
+		"logical time %d: node %d received a leader acknowledgement from node %d",
+		n.Clock,
+		n.id,
+		peerID,
+	)
+
+	n.Mutex.Unlock()
 }
 
-func (n *Node) Election(ctx context.Context, msg *pb.IdentifierMSG) (*pb.AcknowledgementMSG, error) {
+func (n *Node) Election(
+	ctx context.Context,
+	msg *pb.IdentifierMSG,
+) (*pb.AcknowledgementMSG, error) {
 	n.Mutex.Lock()
+
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
-	n.Clock = n.Clock + 1
-	log.Printf("logical time %d: recieved election request from %d", n.Clock, msg.Id)
-	n.Clock = n.Clock + 1
-	log.Printf("logical time %d: sent response to election request from %d", n.Clock, msg.Id)
-	ack := pb.AcknowledgementMSG{Clock: n.Clock}
-	if n.electionongoing {
-		defer n.StartElection()
-	}
+
+	log.Printf(
+		"logical time %d: node %d received an election request from node %d",
+		n.Clock,
+		n.id,
+		msg.GetId(),
+	)
+
+	shouldStartElection := !n.electionOngoing
+
+	n.Clock++
+	responseClock := n.Clock
+
+	log.Printf(
+		"logical time %d: node %d sent an election response to node %d",
+		n.Clock,
+		n.id,
+		msg.GetId(),
+	)
+
 	n.Mutex.Unlock()
-	return &ack, nil // return to tell the calling node, that it is still alive and prevent a timeout.
+
+	if shouldStartElection {
+		go n.StartElection()
+	}
+
+	return &pb.AcknowledgementMSG{
+		Clock: responseClock,
+	}, nil
 }
 
-func (n *Node) SetnewLeader(ctx context.Context, msg *pb.IdentifierMSG) (*pb.AcknowledgementMSG, error) {
-
+func (n *Node) SetnewLeader(
+	ctx context.Context,
+	msg *pb.IdentifierMSG,
+) (*pb.AcknowledgementMSG, error) {
 	n.Mutex.Lock()
-	n.Clock = n.Clock + 1
-	n.currentPRM = int(msg.Id)
-	log.Printf("logical time %d: recieved anouncement of leadership from %d", n.Clock, msg.Id)
+
+	n.Clock = max(n.Clock, msg.GetClock()) + 1
+	n.currentLeader = int(msg.GetId())
+	n.electionOngoing = false
+
+	log.Printf(
+		"logical time %d: node %d accepted node %d as the new leader",
+		n.Clock,
+		n.id,
+		msg.GetId(),
+	)
+
+	n.Clock++
+	responseClock := n.Clock
+
 	n.Mutex.Unlock()
-	return &pb.AcknowledgementMSG{}, nil // return acknowledgement, but i wont be read
+
+	return &pb.AcknowledgementMSG{
+		Clock: responseClock,
+	}, nil
 }
