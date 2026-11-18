@@ -1,32 +1,63 @@
 syntax = "proto3";
 option go_package = "handin4/grpc/proto";
 
+enum BidOutcome {
+    BID_OUTCOME_UNSPECIFIED = 0;
+    BID_SUCCESS = 1;
+    BID_FAIL = 2;
+    BID_EXCEPTION = 3;
+}
+
 
 message bidMSG {
     int32 clock = 1;
     int32 amount = 2;
+    string bidderId = 3;
+    string requestId = 4;
 }
 message resultMSG {
     int32 clock = 1;
     int32 amount = 2;
-    bool auctionOver = 3;
+    string bidderId = 3;
+    bool auctionOver = 4;
+    int32 leaderId = 5;
+    int64 stateVersion = 6;
 }
 message IdentifierMSG {
     int32 clock = 1;
     int32 id = 2;
+    int64 leaderTerm = 3;
 }
 message acknowledgementMSG {
     int32 clock = 1;
+    BidOutcome outcome = 2;
+    string message = 3;
+    int32 leaderId = 4;
+    int64 stateVersion = 5;
 }
 
+message auctionStateMSG{
+    int32 clock = 1;
+    int32 highestBid = 2;
+    string highestBidder = 3;
+    int64 auctionDeadlineUnixMs = 4;
+    bool auctionOver = 5;
+    int64 stateVersion = 6;
+    int32 leaderId = 7;
+    int64 leaderTerm = 8;
+    string requestId = 9;
+}
 
 
 service Auction {
     rpc bid (bidMSG) returns (acknowledgementMSG);
     rpc Result (acknowledgementMSG) returns (resultMSG);
+
     rpc election(IdentifierMSG) returns (acknowledgementMSG);
     rpc setnewLeader(IdentifierMSG) returns (acknowledgementMSG);
     rpc requestLeader(acknowledgementMSG) returns (IdentifierMSG);
     rpc ping(acknowledgementMSG) returns (acknowledgementMSG);
-    rpc update(bidMSG) returns (bidMSG);
+    
+    rpc update(auctionStateMSG) returns (acknowledgementMSG);
+    rpc getState(acknowledgementMSG) returns (auctionStateMSG);
 }
