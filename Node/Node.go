@@ -510,6 +510,7 @@ func (n *Node) Bid(ctx context.Context, msg *pb.BidMSG) (*pb.AcknowledgementMSG,
 	}
 
 	n.updateAuctionStatusLocked()
+	n.UpdateReplicas()
 
 	if n.auctionOver {
 		n.Clock++
