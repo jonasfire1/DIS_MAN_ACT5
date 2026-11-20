@@ -190,6 +190,7 @@ func (n *Node) StartElection() {
 
 	if !higherNodeResponded {
 		n.AnnounceLeadership()
+		n.UpdateReplicas()
 		return
 	}
 
@@ -310,17 +311,22 @@ func (n *Node) AnnounceLeadership() {
 	)
 
 	n.Mutex.Unlock()
+	var wg sync.WaitGroup
+	wg.Add(numberOfNodes - 1)
 
 	for peerID := 0; peerID < numberOfNodes; peerID++ {
 		if peerID == n.id {
 			continue
 		}
 
-		go n.sendLeaderAnnouncement(peerID)
+		go n.sendLeaderAnnouncement(peerID, &wg)
 	}
+	wg.Wait()
+
 }
 
-func (n *Node) sendLeaderAnnouncement(peerID int) {
+func (n *Node) sendLeaderAnnouncement(peerID int, wg *sync.WaitGroup) {
+	defer wg.Done()
 	n.Mutex.Lock()
 	n.Clock++
 
@@ -764,4 +770,87 @@ func (n *Node) handleLeaderFailure(failedLeaderID int) {
 	n.Mutex.Unlock()
 
 	n.StartElection()
+}
+
+func (n *Node) Update(
+	ctx context.Context,
+	msg *pb.AuctionStateMSG,
+) (*pb.AcknowledgementMSG, error) {
+
+	if msg.LeaderId != int32(n.currentLeader) || msg.LeaderTerm < n.leaderTerm {
+		// return an error
+	}
+	n.Mutex.Lock()
+	defer n.Mutex.Unlock()
+	n.Clock = max(n.Clock, msg.GetClock()) + 1
+	log.Printf("logical time %d: recieved auctionstate update from %d", n.Clock, msg.LeaderId)
+	n.highestBid = msg.HighestBid
+	n.highestBidder = msg.HighestBidder
+	n.auctionDeadlineUnixMs = msg.AuctionDeadlineUnixMs
+	n.updateAuctionStatusLocked()
+	log.Printf("logical time %d: sends auctionstate synch acknowledgement to %d", n.Clock, msg.LeaderId)
+	return &pb.AcknowledgementMSG{Clock: n.Clock}, nil
+}
+
+func (n *Node) UpdateReplicas() {
+	var wg sync.WaitGroup
+	wg.Add(numberOfNodes - 1)
+
+	for peerID := 0; peerID < numberOfNodes; peerID++ {
+		if peerID == n.id {
+			continue
+		}
+		go n.sendUpdate(peerID, &wg)
+	}
+
+	wg.Wait()
+}
+
+func (n *Node) sendUpdate(peerID int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	n.Mutex.Lock()
+	n.Clock++
+
+	AuctionStateMSG := &pb.AuctionStateMSG{
+		Clock:                 n.Clock,
+		HighestBid:            n.highestBid,
+		HighestBidder:         n.highestBidder,
+		AuctionDeadlineUnixMs: n.auctionDeadlineUnixMs,
+		LeaderId:              int32(n.id),
+		LeaderTerm:            n.leaderTerm,
+	}
+
+	log.Printf(
+		"logical time %d: sent update to node %d",
+		n.Clock,
+		peerID,
+	)
+	n.Mutex.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+	defer cancel()
+
+	response, err := n.Clients[peerID].Update(ctx, AuctionStateMSG)
+	if err != nil {
+		n.Mutex.Lock()
+		n.Clock++
+
+		log.Printf(
+			"logical time %d:could not update node %d",
+			n.Clock,
+			peerID,
+		)
+		n.Mutex.Unlock()
+		return
+	}
+
+	n.Mutex.Lock()
+	n.Clock = max(n.Clock, response.GetClock()) + 1
+
+	log.Printf(
+		"logical time %d: received update acknowledgement from node %d",
+		n.Clock,
+		peerID,
+	)
+	n.Mutex.Unlock()
 }
