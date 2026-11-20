@@ -32,7 +32,7 @@ type AuctionClient struct {
 }
 
 func main() {
-	if len(os.Args) < 4 {
+	if len(os.Args) < 3 {
 		printUsage()
 	}
 
@@ -49,7 +49,7 @@ func main() {
 
 	switch operation {
 	case "bid":
-		if len(os.Args) != 5 {
+		if len(os.Args) != 4 {
 			log.Fatal("Bid usage: go run ./Client <bidder_id> bid <amount>")
 		}
 
@@ -65,7 +65,7 @@ func main() {
 		client.submitBid(int32(amount))
 
 	case "result":
-		if len(os.Args) != 4 {
+		if len(os.Args) != 3 {
 			log.Fatal("Result usage: go run ./Client <bidder_id> result")
 		}
 
