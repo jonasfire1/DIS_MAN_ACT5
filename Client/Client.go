@@ -18,7 +18,7 @@ import (
 const (
 	numberOfNodes        = 4
 	firstNodePort        = 5050
-	rpcTimeout           = 1 * time.Second
+	rpcTimeout           = 4 * time.Second
 	retryDelay           = 1 * time.Second
 	maxLeaderDiscoveries = 8
 )
@@ -130,27 +130,39 @@ func (c *AuctionClient) discoverLeader() (int, error) {
 	for attempt := 1; attempt <= maxLeaderDiscoveries; attempt++ {
 		for _, nodeID := range nodeOrder {
 
-			ctx, cancel := context.WithTimeout(
+			ctx1, cancel1 := context.WithTimeout(
 				context.Background(),
 				rpcTimeout,
 			)
 
 			response, err := c.clients[nodeID].RequestLeader(
-				ctx,
+				ctx1,
 				&pb.AcknowledgementMSG{},
 			)
 
-			cancel()
+			cancel1()
 
 			if err != nil {
 				continue
 			}
 
-			leaderID := int(response.GetId())
-			c.lastKnowLeader = leaderID
+			possibleLeaderID := int(response.GetId())
 
-			if leaderID >= 0 && leaderID < numberOfNodes {
-				return leaderID, nil
+			ctx2, cancel2 := context.WithTimeout(
+				context.Background(),
+				rpcTimeout,
+			)
+			ConfirmationResponse, err := c.clients[possibleLeaderID].RequestLeader(
+				ctx2,
+				&pb.AcknowledgementMSG{},
+			)
+			cancel2()
+
+			c.lastKnowLeader = possibleLeaderID
+
+			if possibleLeaderID >= 0 && possibleLeaderID < numberOfNodes && possibleLeaderID == int(ConfirmationResponse.Id) {
+				c.lastKnowLeader = possibleLeaderID
+				return possibleLeaderID, nil
 			}
 		}
 
