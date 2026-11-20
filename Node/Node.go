@@ -687,8 +687,6 @@ func (n *Node) MonitorLeader() {
 			monitoredLeader = leaderID
 		}
 
-		n.Clock++
-
 		request := &pb.AcknowledgementMSG{
 			Clock:        n.Clock,
 			LeaderId:     int32(leaderID),
@@ -788,7 +786,7 @@ func (n *Node) Update(
 	n.auctionDeadlineUnixMs = msg.AuctionDeadlineUnixMs
 	n.stateVersion = msg.StateVersion
 	n.updateAuctionStatusLocked()
-	log.Printf("logical time %d: sends auctionstate synch acknowledgement to %d", n.Clock, msg.LeaderId)
+	log.Printf("logical time %d: sends auctionstate update acknowledgement to %d", n.Clock, msg.LeaderId)
 	return &pb.AcknowledgementMSG{Clock: n.Clock}, nil
 }
 
@@ -837,7 +835,7 @@ func (n *Node) sendUpdate(peerID int, wg *sync.WaitGroup) {
 		n.Clock++
 
 		log.Printf(
-			"logical time %d:could not update node %d",
+			"logical time %d: could not update node %d",
 			n.Clock,
 			peerID,
 		)

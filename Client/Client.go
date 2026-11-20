@@ -24,10 +24,11 @@ const (
 )
 
 type AuctionClient struct {
-	bidderID    string
-	clock       int32
-	clients     [numberOfNodes]pb.AuctionClient
-	connections [numberOfNodes]*grpc.ClientConn
+	bidderID       string
+	clock          int32
+	lastKnowLeader int
+	clients        [numberOfNodes]pb.AuctionClient
+	connections    [numberOfNodes]*grpc.ClientConn
 }
 
 func main() {
@@ -37,12 +38,7 @@ func main() {
 
 	bidderID := os.Args[1]
 
-	knownNodeID, err := strconv.Atoi(os.Args[2])
-	if err != nil || knownNodeID < 0 || knownNodeID >= numberOfNodes {
-		log.Fatal("The known node ID must be an integer from 0 through 3")
-	}
-
-	operation := strings.ToLower(os.Args[3])
+	operation := strings.ToLower(os.Args[2])
 
 	client := &AuctionClient{
 		bidderID: bidderID,
@@ -54,10 +50,10 @@ func main() {
 	switch operation {
 	case "bid":
 		if len(os.Args) != 5 {
-			log.Fatal("Bid usage: go run ./Client <bidder_id> <known_node_id> bid <amount>")
+			log.Fatal("Bid usage: go run ./Client <bidder_id> bid <amount>")
 		}
 
-		amount, err := strconv.Atoi(os.Args[4])
+		amount, err := strconv.Atoi(os.Args[3])
 		if err != nil {
 			log.Fatal("The bid amount must be an integer")
 		}
@@ -66,14 +62,14 @@ func main() {
 			log.Fatal("The bid amount must be greater than zero")
 		}
 
-		client.submitBid(knownNodeID, int32(amount))
+		client.submitBid(int32(amount))
 
 	case "result":
 		if len(os.Args) != 4 {
-			log.Fatal("Result usage: go run ./Client <bidder_id> <known_node_id> result")
+			log.Fatal("Result usage: go run ./Client <bidder_id> result")
 		}
 
-		client.requestResult(knownNodeID)
+		client.requestResult()
 
 	default:
 		printUsage()
@@ -128,12 +124,11 @@ func (c *AuctionClient) closeConnections() {
 	}
 }
 
-func (c *AuctionClient) discoverLeader(knownNodeID int) (int, error) {
-	nodeOrder := c.nodeSearchOrder(knownNodeID)
+func (c *AuctionClient) discoverLeader() (int, error) {
+	nodeOrder := c.nodeSearchOrder(int(c.lastKnowLeader))
 
 	for attempt := 1; attempt <= maxLeaderDiscoveries; attempt++ {
 		for _, nodeID := range nodeOrder {
-			c.clock++
 
 			ctx, cancel := context.WithTimeout(
 				context.Background(),
@@ -142,9 +137,7 @@ func (c *AuctionClient) discoverLeader(knownNodeID int) (int, error) {
 
 			response, err := c.clients[nodeID].RequestLeader(
 				ctx,
-				&pb.AcknowledgementMSG{
-					Clock: c.clock,
-				},
+				&pb.AcknowledgementMSG{},
 			)
 
 			cancel()
@@ -153,9 +146,8 @@ func (c *AuctionClient) discoverLeader(knownNodeID int) (int, error) {
 				continue
 			}
 
-			c.clock = max(c.clock, response.GetClock()) + 1
-
 			leaderID := int(response.GetId())
+			c.lastKnowLeader = leaderID
 
 			if leaderID >= 0 && leaderID < numberOfNodes {
 				return leaderID, nil
@@ -191,7 +183,7 @@ func (c *AuctionClient) nodeSearchOrder(knownNodeID int) []int {
 	return nodeOrder
 }
 
-func (c *AuctionClient) submitBid(knownNodeID int, amount int32) {
+func (c *AuctionClient) submitBid(amount int32) {
 	requestID := fmt.Sprintf(
 		"%s-%d",
 		c.bidderID,
@@ -199,12 +191,10 @@ func (c *AuctionClient) submitBid(knownNodeID int, amount int32) {
 	)
 
 	for attempt := 1; attempt <= maxLeaderDiscoveries; attempt++ {
-		leaderID, err := c.discoverLeader(knownNodeID)
+		leaderID, err := c.discoverLeader()
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		c.clock++
 
 		ctx, cancel := context.WithTimeout(
 			context.Background(),
@@ -230,7 +220,6 @@ func (c *AuctionClient) submitBid(knownNodeID int, amount int32) {
 			)
 
 			time.Sleep(retryDelay)
-			knownNodeID = nextNodeID(leaderID)
 			continue
 		}
 
@@ -244,13 +233,12 @@ func (c *AuctionClient) submitBid(knownNodeID int, amount int32) {
 			)
 
 			time.Sleep(retryDelay)
-
-			if response.GetLeaderId() >= 0 &&
-				response.GetLeaderId() < numberOfNodes {
-				knownNodeID = int(response.GetLeaderId())
-			} else {
-				knownNodeID = nextNodeID(leaderID)
-			}
+			/*
+				if response.GetLeaderId() >= 0 && response.GetLeaderId() < numberOfNodes {
+					knownNodeID = int(response.GetLeaderId())
+				} else {
+					knownNodeID = nextNodeID(leaderID)
+				}*/
 
 			continue
 		}
@@ -262,9 +250,9 @@ func (c *AuctionClient) submitBid(knownNodeID int, amount int32) {
 	log.Fatal("The bid could not be completed after repeated attempts")
 }
 
-func (c *AuctionClient) requestResult(knownNodeID int) {
+func (c *AuctionClient) requestResult() {
 	for attempt := 1; attempt <= maxLeaderDiscoveries; attempt++ {
-		leaderID, err := c.discoverLeader(knownNodeID)
+		leaderID, err := c.discoverLeader()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -293,7 +281,6 @@ func (c *AuctionClient) requestResult(knownNodeID int) {
 			)
 
 			time.Sleep(retryDelay)
-			knownNodeID = nextNodeID(leaderID)
 			continue
 		}
 
@@ -322,8 +309,6 @@ func printBidResponse(
 	fmt.Printf("Bidder: %s\n", bidderID)
 	fmt.Printf("Amount: %d\n", amount)
 	fmt.Printf("Message: %s\n", response.GetMessage())
-	fmt.Printf("Leader: node %d\n", response.GetLeaderId())
-	fmt.Printf("State version: %d\n", response.GetStateVersion())
 }
 
 func printResult(response *pb.ResultMSG) {
