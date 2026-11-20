@@ -579,9 +579,8 @@ func (n *Node) Result(
 	n.updateAuctionStatusLocked()
 
 	log.Printf(
-		"logical time %d: node %d returned auction state version %d",
+		"logical time %d: returned auction state version %d",
 		n.Clock,
-		n.id,
 		n.stateVersion,
 	)
 
@@ -787,6 +786,7 @@ func (n *Node) Update(
 	n.highestBid = msg.HighestBid
 	n.highestBidder = msg.HighestBidder
 	n.auctionDeadlineUnixMs = msg.AuctionDeadlineUnixMs
+	n.stateVersion = msg.StateVersion
 	n.updateAuctionStatusLocked()
 	log.Printf("logical time %d: sends auctionstate synch acknowledgement to %d", n.Clock, msg.LeaderId)
 	return &pb.AcknowledgementMSG{Clock: n.Clock}, nil
@@ -818,6 +818,7 @@ func (n *Node) sendUpdate(peerID int, wg *sync.WaitGroup) {
 		AuctionDeadlineUnixMs: n.auctionDeadlineUnixMs,
 		LeaderId:              int32(n.id),
 		LeaderTerm:            n.leaderTerm,
+		StateVersion:          n.stateVersion,
 	}
 
 	log.Printf(
@@ -853,4 +854,25 @@ func (n *Node) sendUpdate(peerID int, wg *sync.WaitGroup) {
 		peerID,
 	)
 	n.Mutex.Unlock()
+}
+
+func (n *Node) getState(
+	ctx context.Context,
+	msg *pb.AcknowledgementMSG,
+) (*pb.AuctionStateMSG, error) {
+
+	n.Mutex.Lock()
+	n.Clock = max(n.Clock, msg.GetClock()) + 1
+	log.Printf("logical time %d: recieved getstate request", n.Clock)
+	n.updateAuctionStatusLocked()
+	AuctionStateMSG := &pb.AuctionStateMSG{
+		Clock:                 n.Clock,
+		HighestBid:            n.highestBid,
+		HighestBidder:         n.highestBidder,
+		AuctionDeadlineUnixMs: n.auctionDeadlineUnixMs,
+		LeaderId:              int32(n.id),
+		LeaderTerm:            n.leaderTerm,
+	}
+	n.Mutex.Unlock()
+	return AuctionStateMSG, nil
 }
