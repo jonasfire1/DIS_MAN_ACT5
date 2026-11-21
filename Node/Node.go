@@ -35,7 +35,8 @@ type Node struct {
 
 	id              int
 	currentLeader   int
-	electionOngoing bool
+	electionOngoing bool // yes keeping track of system state this way is silly but we're too lazy to change it
+	synchOngoing    bool
 	leaderTerm      int64
 
 	highestBid            int32
@@ -190,6 +191,7 @@ func (n *Node) StartElection() {
 
 	if !higherNodeResponded {
 		n.AnnounceLeadership()
+		n.Synchronize()
 		n.UpdateReplicas()
 		return
 	}
@@ -294,6 +296,7 @@ func (n *Node) AnnounceLeadership() {
 	n.Mutex.Lock()
 
 	n.electionOngoing = false
+	n.synchOngoing = true
 	n.currentLeader = n.id
 	n.leaderTerm++
 
@@ -424,6 +427,7 @@ func (n *Node) SetnewLeader(
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
 	n.currentLeader = int(msg.GetId())
 	n.electionOngoing = false
+	n.synchOngoing = false
 
 	if msg.GetLeaderTerm() > n.leaderTerm {
 		n.leaderTerm = msg.GetLeaderTerm()
@@ -865,16 +869,92 @@ func (n *Node) sendUpdate(peerID int, wg *sync.WaitGroup) {
 	)
 	n.Mutex.Unlock()
 }
+func (n *Node) Synchronize() {
 
-func (n *Node) getState(
+	responses := make(chan *pb.AuctionStateMSG, n.id)
+	var wg sync.WaitGroup
+	wg.Add(n.id) // number of nodes with smaller ids
+	for peerID := 0; peerID < n.id; peerID++ {
+		go func() {
+			defer wg.Done()
+			n.Mutex.Lock()
+			n.Clock++
+			log.Printf(
+				"logical time %d: sent Auctionstate synch request to node %d",
+				n.Clock,
+				peerID,
+			)
+			msg := &pb.AcknowledgementMSG{Clock: n.Clock}
+			n.Mutex.Unlock()
+
+			ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+			defer cancel()
+			response, err := n.Clients[peerID].GetState(ctx, msg)
+			if err != nil {
+				n.Mutex.Lock()
+				n.Clock++
+
+				log.Printf(
+					"logical time %d: Failed to get state from node %d",
+					n.Clock,
+					peerID,
+				)
+				n.Mutex.Unlock()
+				responses <- nil
+				return
+			}
+
+			n.Mutex.Lock()
+			n.Clock = max(n.Clock, response.GetClock()) + 1
+			log.Printf(
+				"logical time %d: recieved state version %d from node %d",
+				n.Clock,
+				response.StateVersion,
+				peerID,
+			)
+			n.Mutex.Unlock()
+			responses <- response
+		}()
+	}
+	wg.Wait()
+	var latest *pb.AuctionStateMSG
+
+	for i := 0; i < n.id; i++ {
+		response := <-responses
+		if response == nil {
+			continue
+		}
+		if latest == nil || (latest.StateVersion < response.StateVersion) {
+			latest = response
+		}
+	}
+	if latest != nil {
+
+		n.Mutex.Lock()
+		n.Clock++
+		n.highestBid = latest.HighestBid
+		n.highestBidder = latest.HighestBidder
+		n.auctionDeadlineUnixMs = latest.AuctionDeadlineUnixMs
+		n.stateVersion = latest.StateVersion
+		n.updateAuctionStatusLocked()
+		log.Printf(
+			"logical time %d: Updated auction state version to %d",
+			n.Clock,
+			n.stateVersion,
+		)
+		n.Mutex.Unlock()
+	}
+	n.synchOngoing = false
+}
+
+func (n *Node) GetState(
 	ctx context.Context,
 	msg *pb.AcknowledgementMSG,
 ) (*pb.AuctionStateMSG, error) {
 
 	n.Mutex.Lock()
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
-	log.Printf("logical time %d: recieved getstate request", n.Clock)
-	n.updateAuctionStatusLocked()
+	log.Printf("logical time %d: recieved get state request", n.Clock)
 	AuctionStateMSG := &pb.AuctionStateMSG{
 		Clock:                 n.Clock,
 		HighestBid:            n.highestBid,
@@ -882,6 +962,7 @@ func (n *Node) getState(
 		AuctionDeadlineUnixMs: n.auctionDeadlineUnixMs,
 		LeaderId:              int32(n.id),
 		LeaderTerm:            n.leaderTerm,
+		StateVersion:          n.stateVersion,
 	}
 	n.Mutex.Unlock()
 	return AuctionStateMSG, nil
