@@ -172,6 +172,8 @@ func (n *Node) StartElection() {
 
 	if numberOfHigherNodes == 0 {
 		n.AnnounceLeadership()
+		n.Synchronize()
+		n.UpdateReplicas()
 		return
 	}
 
