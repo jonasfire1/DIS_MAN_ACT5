@@ -449,7 +449,6 @@ func (n *Node) SetnewLeader(
 
 func (n *Node) Bid(ctx context.Context, msg *pb.BidMSG) (*pb.AcknowledgementMSG, error) {
 	n.Mutex.Lock()
-	defer n.Mutex.Unlock()
 
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
 
@@ -510,7 +509,6 @@ func (n *Node) Bid(ctx context.Context, msg *pb.BidMSG) (*pb.AcknowledgementMSG,
 	}
 
 	n.updateAuctionStatusLocked()
-	n.UpdateReplicas()
 
 	if n.auctionOver {
 		n.Clock++
@@ -546,6 +544,9 @@ func (n *Node) Bid(ctx context.Context, msg *pb.BidMSG) (*pb.AcknowledgementMSG,
 	n.highestBidder = msg.GetBidderId()
 	n.stateVersion++
 	n.Clock++
+	n.Mutex.Unlock()
+
+	n.UpdateReplicas()
 
 	response := &pb.AcknowledgementMSG{
 		Clock:        n.Clock,
@@ -602,7 +603,6 @@ func (n *Node) RequestLeader(
 	msg *pb.AcknowledgementMSG,
 ) (*pb.IdentifierMSG, error) {
 	n.Mutex.Lock()
-	defer n.Mutex.Unlock()
 
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
 
@@ -611,9 +611,22 @@ func (n *Node) RequestLeader(
 		n.Clock,
 		n.id,
 	)
+	n.Mutex.Unlock()
 
+	//not very effecient
+	for n.electionOngoing {
+
+	}
+
+	n.Mutex.Lock()
 	n.Clock++
-
+	log.Printf(
+		"logical time %d: Resonded to leader information request that %d is leader for term %d",
+		n.Clock,
+		n.currentLeader,
+		n.leaderTerm,
+	)
+	n.Mutex.Unlock()
 	return &pb.IdentifierMSG{
 		Clock:      n.Clock,
 		Id:         int32(n.currentLeader),
@@ -794,14 +807,12 @@ func (n *Node) Update(
 func (n *Node) UpdateReplicas() {
 	var wg sync.WaitGroup
 	wg.Add(numberOfNodes - 1)
-
 	for peerID := 0; peerID < numberOfNodes; peerID++ {
 		if peerID == n.id {
 			continue
 		}
 		go n.sendUpdate(peerID, &wg)
 	}
-
 	wg.Wait()
 }
 
