@@ -12,7 +12,9 @@ import (
 	pb "handin5/gRPC"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -425,15 +427,24 @@ func (n *Node) SetnewLeader(
 	msg *pb.IdentifierMSG,
 ) (*pb.AcknowledgementMSG, error) {
 	n.Mutex.Lock()
+	defer n.Mutex.Unlock()
 
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
+	if msg.GetLeaderTerm() < n.leaderTerm {
+		n.Clock++
+		return &pb.AcknowledgementMSG{
+			Clock:        n.Clock,
+			Outcome:      pb.BidOutcome_BID_EXCEPTION,
+			Message:      "Rejected stale leader announcement",
+			LeaderId:     int32(n.currentLeader),
+			StateVersion: n.stateVersion,
+		}, nil
+	}
+
 	n.currentLeader = int(msg.GetId())
+	n.leaderTerm = msg.GetLeaderTerm()
 	n.electionOngoing = false
 	n.synchOngoing = false
-
-	if msg.GetLeaderTerm() > n.leaderTerm {
-		n.leaderTerm = msg.GetLeaderTerm()
-	}
 
 	log.Printf(
 		"logical time %d: node %d accepted node %d as the new leader for term %d",
@@ -444,12 +455,13 @@ func (n *Node) SetnewLeader(
 	)
 
 	n.Clock++
-	responseClock := n.Clock
-
-	n.Mutex.Unlock()
 
 	return &pb.AcknowledgementMSG{
-		Clock: responseClock,
+		Clock:        n.Clock,
+		Outcome:      pb.BidOutcome_BID_SUCCESS,
+		Message:      "Leader announcement accepted",
+		LeaderId:     int32(n.currentLeader),
+		StateVersion: n.stateVersion,
 	}, nil
 }
 
@@ -602,6 +614,14 @@ func (n *Node) Result(
 	defer n.Mutex.Unlock()
 
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
+
+	if n.currentLeader != n.id {
+		return nil, status.Errorf(
+			codes.FailedPrecondition,
+			"This node is not the leader",
+		)
+	}
+
 	n.updateAuctionStatusLocked()
 
 	log.Printf(
@@ -805,21 +825,43 @@ func (n *Node) Update(
 	ctx context.Context,
 	msg *pb.AuctionStateMSG,
 ) (*pb.AcknowledgementMSG, error) {
-
-	if msg.LeaderId != int32(n.currentLeader) || msg.LeaderTerm < n.leaderTerm {
-		// return an error
-	}
 	n.Mutex.Lock()
 	defer n.Mutex.Unlock()
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
-	log.Printf("logical time %d: recieved auctionstate update from %d", n.Clock, msg.LeaderId)
-	n.highestBid = msg.HighestBid
-	n.highestBidder = msg.HighestBidder
-	n.auctionDeadlineUnixMs = msg.AuctionDeadlineUnixMs
-	n.stateVersion = msg.StateVersion
+	if msg.GetLeaderId() != int32(n.currentLeader) || msg.GetLeaderTerm() != n.leaderTerm {
+		n.Clock++
+		return &pb.AcknowledgementMSG{
+			Clock:   n.Clock,
+			Outcome: pb.BidOutcome_BID_EXCEPTION,
+			Message: "Rejected update from an invalid or stale leader",
+		}, nil
+	}
+	if msg.GetStateVersion() <= n.stateVersion {
+		n.Clock++
+		return &pb.AcknowledgementMSG{
+			Clock:        n.Clock,
+			Outcome:      pb.BidOutcome_BID_FAIL,
+			Message:      "Rejected stale auction state",
+			LeaderId:     int32(n.currentLeader),
+			StateVersion: n.stateVersion,
+		}, nil
+	}
+	log.Printf("logical time %d: recieved auctionstate update from %d", n.Clock, msg.GetLeaderId())
+	n.highestBid = msg.GetHighestBid()
+	n.highestBidder = msg.GetHighestBidder()
+	n.auctionDeadlineUnixMs = msg.GetAuctionDeadlineUnixMs()
+	n.stateVersion = msg.GetStateVersion()
 	n.updateAuctionStatusLocked()
-	log.Printf("logical time %d: sends auctionstate update acknowledgement to %d", n.Clock, msg.LeaderId)
-	return &pb.AcknowledgementMSG{Clock: n.Clock}, nil
+	n.Clock++
+
+	log.Printf("logical time %d: sends auctionstate update acknowledgement to node %d", n.Clock, msg.GetLeaderId())
+	return &pb.AcknowledgementMSG{
+		Clock:        n.Clock,
+		Outcome:      pb.BidOutcome_BID_SUCCESS,
+		Message:      "Auction state update",
+		LeaderId:     int32(n.currentLeader),
+		StateVersion: n.stateVersion,
+	}, nil
 }
 
 func (n *Node) UpdateReplicas() {
@@ -844,6 +886,7 @@ func (n *Node) sendUpdate(peerID int, wg *sync.WaitGroup) {
 		HighestBid:            n.highestBid,
 		HighestBidder:         n.highestBidder,
 		AuctionDeadlineUnixMs: n.auctionDeadlineUnixMs,
+		AuctionOver:           n.auctionOver,
 		LeaderId:              int32(n.id),
 		LeaderTerm:            n.leaderTerm,
 		StateVersion:          n.stateVersion,
@@ -946,10 +989,10 @@ func (n *Node) Synchronize() {
 
 		n.Mutex.Lock()
 		n.Clock++
-		n.highestBid = latest.HighestBid
-		n.highestBidder = latest.HighestBidder
-		n.auctionDeadlineUnixMs = latest.AuctionDeadlineUnixMs
-		n.stateVersion = latest.StateVersion
+		n.highestBid = latest.GetHighestBid()
+		n.highestBidder = latest.GetHighestBidder()
+		n.auctionDeadlineUnixMs = latest.GetAuctionDeadlineUnixMs()
+		n.stateVersion = latest.GetStateVersion()
 		n.updateAuctionStatusLocked()
 		log.Printf(
 			"logical time %d: Updated auction state version to %d",
@@ -976,6 +1019,7 @@ func (n *Node) GetState(
 		HighestBid:            n.highestBid,
 		HighestBidder:         n.highestBidder,
 		AuctionDeadlineUnixMs: n.auctionDeadlineUnixMs,
+		AuctionOver:           n.auctionOver,
 		LeaderId:              int32(n.id),
 		LeaderTerm:            n.leaderTerm,
 		StateVersion:          n.stateVersion,
