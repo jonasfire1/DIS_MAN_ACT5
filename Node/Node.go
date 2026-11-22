@@ -39,7 +39,6 @@ type Node struct {
 	currentLeader   int
 	electionOngoing bool // yes keeping track of system state this way is silly but we're too lazy to change it
 	synchOngoing    bool
-	leaderTerm      int64
 
 	highestBid            int32
 	highestBidder         string
@@ -303,15 +302,13 @@ func (n *Node) AnnounceLeadership() {
 	n.electionOngoing = false
 	n.synchOngoing = true
 	n.currentLeader = n.id
-	n.leaderTerm++
 
 	n.Clock++
 
 	log.Printf(
-		"logical time %d: node %d declared itself the leader for term %d",
+		"logical time %d: node %d declared itself the leader",
 		n.Clock,
 		n.id,
-		n.leaderTerm,
 	)
 
 	n.Mutex.Unlock()
@@ -335,9 +332,8 @@ func (n *Node) sendLeaderAnnouncement(peerID int, wg *sync.WaitGroup) {
 	n.Clock++
 
 	request := &pb.IdentifierMSG{
-		Id:         int32(n.id),
-		Clock:      n.Clock,
-		LeaderTerm: n.leaderTerm,
+		Id:    int32(n.id),
+		Clock: n.Clock,
 	}
 
 	log.Printf(
@@ -432,42 +428,48 @@ func (n *Node) SetnewLeader(
 	msg *pb.IdentifierMSG,
 ) (*pb.AcknowledgementMSG, error) {
 	n.Mutex.Lock()
-	defer n.Mutex.Unlock()
 
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
-	if msg.GetLeaderTerm() < n.leaderTerm || (msg.GetLeaderTerm() == n.leaderTerm && n.currentLeader >= 0 && int(msg.GetId()) < n.currentLeader) {
+	announcedLeader := int(msg.GetId())
+	if announcedLeader < n.id {
 		n.Clock++
-		return &pb.AcknowledgementMSG{
+		response := &pb.AcknowledgementMSG{
 			Clock:        n.Clock,
 			Outcome:      pb.BidOutcome_BID_EXCEPTION,
-			Message:      "Rejected stale leader announcement",
+			Message:      "Rejected leader with a lower node",
 			LeaderId:     int32(n.currentLeader),
 			StateVersion: n.stateVersion,
-		}, nil
+		}
+		shouldStartElection := !n.electionOngoing
+		n.Mutex.Unlock()
+		if shouldStartElection {
+			go n.StartElection()
+		}
+		return response, nil
 	}
 
 	n.currentLeader = int(msg.GetId())
-	n.leaderTerm = msg.GetLeaderTerm()
 	n.electionOngoing = false
 	n.synchOngoing = false
 
 	log.Printf(
-		"logical time %d: node %d accepted node %d as the new leader for term %d",
+		"logical time %d: node %d accepted node %d as the new leader",
 		n.Clock,
 		n.id,
-		msg.GetId(),
-		n.leaderTerm,
+		announcedLeader,
 	)
 
 	n.Clock++
 
-	return &pb.AcknowledgementMSG{
+	response := &pb.AcknowledgementMSG{
 		Clock:        n.Clock,
 		Outcome:      pb.BidOutcome_BID_SUCCESS,
 		Message:      "Leader announcement accepted",
 		LeaderId:     int32(n.currentLeader),
 		StateVersion: n.stateVersion,
-	}, nil
+	}
+	n.Mutex.Unlock()
+	return response, nil
 }
 
 func (n *Node) Bid(ctx context.Context, msg *pb.BidMSG) (*pb.AcknowledgementMSG, error) {
@@ -671,17 +673,15 @@ func (n *Node) RequestLeader(
 	n.Clock++
 
 	log.Printf(
-		"logical time %d: node %d responded to leader information request with leader %d for term %d",
+		"logical time %d: node %d responded to leader information request with leader %d",
 		n.Clock,
 		n.id,
 		leaderID,
-		n.leaderTerm,
 	)
 
 	return &pb.IdentifierMSG{
-		Clock:      n.Clock,
-		Id:         int32(leaderID),
-		LeaderTerm: n.leaderTerm,
+		Clock: n.Clock,
+		Id:    int32(leaderID),
 	}, nil
 }
 
@@ -841,12 +841,14 @@ func (n *Node) Update(
 	n.Mutex.Lock()
 	defer n.Mutex.Unlock()
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
-	if msg.GetLeaderId() != int32(n.currentLeader) || msg.GetLeaderTerm() != n.leaderTerm {
+	if msg.GetLeaderId() != int32(n.currentLeader) {
 		n.Clock++
 		return &pb.AcknowledgementMSG{
-			Clock:   n.Clock,
-			Outcome: pb.BidOutcome_BID_EXCEPTION,
-			Message: "Rejected update from an invalid or stale leader",
+			Clock:        n.Clock,
+			Outcome:      pb.BidOutcome_BID_EXCEPTION,
+			Message:      "Rejected update from a node that is not the leader",
+			LeaderId:     int32(n.currentLeader),
+			StateVersion: n.stateVersion,
 		}, nil
 	}
 	if msg.GetStateVersion() < n.stateVersion {
@@ -902,7 +904,6 @@ func (n *Node) sendUpdate(peerID int, wg *sync.WaitGroup) {
 		AuctionDeadlineUnixMs: n.auctionDeadlineUnixMs,
 		AuctionOver:           n.auctionOver,
 		LeaderId:              int32(n.id),
-		LeaderTerm:            n.leaderTerm,
 		StateVersion:          n.stateVersion,
 	}
 
@@ -1057,7 +1058,6 @@ func (n *Node) GetState(
 		AuctionDeadlineUnixMs: n.auctionDeadlineUnixMs,
 		AuctionOver:           n.auctionOver,
 		LeaderId:              int32(n.id),
-		LeaderTerm:            n.leaderTerm,
 		StateVersion:          n.stateVersion,
 	}
 	n.Mutex.Unlock()
