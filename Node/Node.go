@@ -61,10 +61,11 @@ func main() {
 	}
 
 	node := &Node{
-		id:                nodeID,
-		Clock:             0,
-		currentLeader:     -1,
-		processedRequests: make(map[string]*pb.AcknowledgementMSG),
+		id:                    nodeID,
+		Clock:                 0,
+		currentLeader:         -1,
+		auctionDeadlineUnixMs: time.Now().Add(auctionDuration).UnixMilli(),
+		processedRequests:     make(map[string]*pb.AcknowledgementMSG),
 	}
 
 	nodeAddress := ":" + strconv.Itoa(firstNodePort+node.id)
@@ -304,10 +305,6 @@ func (n *Node) AnnounceLeadership() {
 	n.currentLeader = n.id
 	n.leaderTerm++
 
-	if n.auctionDeadlineUnixMs == 0 {
-		n.auctionDeadlineUnixMs = time.Now().Add(auctionDuration).UnixMilli()
-	}
-
 	n.Clock++
 
 	log.Printf(
@@ -399,8 +396,9 @@ func (n *Node) Election(
 		msg.GetId(),
 	)
 
-	shouldStartElection := !n.electionOngoing
-
+	isCurrentLeader := n.currentLeader == n.id
+	shouldStartElection := !n.electionOngoing && n.currentLeader != n.id
+	requestingNodeID := int(msg.GetId())
 	n.Clock++
 	responseClock := n.Clock
 
@@ -413,7 +411,14 @@ func (n *Node) Election(
 
 	n.Mutex.Unlock()
 
-	if shouldStartElection {
+	if isCurrentLeader {
+		go func() {
+			var wg sync.WaitGroup
+			wg.Add(1)
+			n.sendLeaderAnnouncement(requestingNodeID, &wg)
+			wg.Wait()
+		}()
+	} else if shouldStartElection {
 		go n.StartElection()
 	}
 
@@ -430,7 +435,7 @@ func (n *Node) SetnewLeader(
 	defer n.Mutex.Unlock()
 
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
-	if msg.GetLeaderTerm() < n.leaderTerm {
+	if msg.GetLeaderTerm() < n.leaderTerm || (msg.GetLeaderTerm() == n.leaderTerm && n.currentLeader >= 0 && int(msg.GetId()) < n.currentLeader) {
 		n.Clock++
 		return &pb.AcknowledgementMSG{
 			Clock:        n.Clock,
@@ -467,6 +472,7 @@ func (n *Node) SetnewLeader(
 
 func (n *Node) Bid(ctx context.Context, msg *pb.BidMSG) (*pb.AcknowledgementMSG, error) {
 	n.Mutex.Lock()
+	defer n.Mutex.Unlock()
 
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
 
@@ -593,7 +599,7 @@ func (n *Node) Bid(ctx context.Context, msg *pb.BidMSG) (*pb.AcknowledgementMSG,
 	n.Mutex.Unlock()
 
 	n.UpdateReplicas()
-
+	n.Mutex.Lock()
 	log.Printf(
 		"logical time %d: node %d accepted bid %d from bidder %q as state version %d",
 		acceptedClock,
@@ -656,18 +662,25 @@ func (n *Node) RequestLeader(
 		n.Clock,
 		n.id,
 	)
+	leaderID := n.currentLeader
+
+	if n.electionOngoing || n.synchOngoing {
+		leaderID = -1
+	}
+
 	n.Clock++
 
 	log.Printf(
-		"logical time %d: Resonded to leader information request that %d is leader for term %d",
+		"logical time %d: node %d responded to leader information request with leader %d for term %d",
 		n.Clock,
-		n.currentLeader,
+		n.id,
+		leaderID,
 		n.leaderTerm,
 	)
 
 	return &pb.IdentifierMSG{
 		Clock:      n.Clock,
-		Id:         int32(n.currentLeader),
+		Id:         int32(leaderID),
 		LeaderTerm: n.leaderTerm,
 	}, nil
 }
@@ -836,7 +849,7 @@ func (n *Node) Update(
 			Message: "Rejected update from an invalid or stale leader",
 		}, nil
 	}
-	if msg.GetStateVersion() <= n.stateVersion {
+	if msg.GetStateVersion() < n.stateVersion {
 		n.Clock++
 		return &pb.AcknowledgementMSG{
 			Clock:        n.Clock,
@@ -850,6 +863,7 @@ func (n *Node) Update(
 	n.highestBid = msg.GetHighestBid()
 	n.highestBidder = msg.GetHighestBidder()
 	n.auctionDeadlineUnixMs = msg.GetAuctionDeadlineUnixMs()
+	n.auctionOver = msg.GetAuctionOver()
 	n.stateVersion = msg.GetStateVersion()
 	n.updateAuctionStatusLocked()
 	n.Clock++
@@ -919,6 +933,17 @@ func (n *Node) sendUpdate(peerID int, wg *sync.WaitGroup) {
 	n.Mutex.Lock()
 	n.Clock = max(n.Clock, response.GetClock()) + 1
 
+	if response.GetOutcome() != pb.BidOutcome_BID_SUCCESS {
+		log.Printf(
+			"logical time %d: node %d rejected update: %s",
+			n.Clock,
+			peerID,
+			response.GetMessage(),
+		)
+		n.Mutex.Unlock()
+		return
+	}
+
 	log.Printf(
 		"logical time %d: received update acknowledgement from node %d",
 		n.Clock,
@@ -976,13 +1001,21 @@ func (n *Node) Synchronize() {
 	wg.Wait()
 	var latest *pb.AuctionStateMSG
 
+	n.Mutex.Lock()
+	earliestDeadline := n.auctionDeadlineUnixMs
+	n.Mutex.Unlock()
+
 	for i := 0; i < n.id; i++ {
 		response := <-responses
 		if response == nil {
 			continue
 		}
-		if latest == nil || (latest.StateVersion < response.StateVersion) {
+		if latest == nil || response.GetStateVersion() > latest.GetStateVersion() {
 			latest = response
+		}
+		responseDeadline := response.GetAuctionDeadlineUnixMs()
+		if responseDeadline > 0 && (earliestDeadline == 0 || responseDeadline < earliestDeadline) {
+			earliestDeadline = responseDeadline
 		}
 	}
 	if latest != nil {
@@ -991,8 +1024,11 @@ func (n *Node) Synchronize() {
 		n.Clock++
 		n.highestBid = latest.GetHighestBid()
 		n.highestBidder = latest.GetHighestBidder()
-		n.auctionDeadlineUnixMs = latest.GetAuctionDeadlineUnixMs()
+		n.auctionOver = latest.GetAuctionOver()
 		n.stateVersion = latest.GetStateVersion()
+		if earliestDeadline > 0 {
+			n.auctionDeadlineUnixMs = earliestDeadline
+		}
 		n.updateAuctionStatusLocked()
 		log.Printf(
 			"logical time %d: Updated auction state version to %d",
