@@ -399,7 +399,7 @@ func (n *Node) Election(
 		msg.GetId(),
 	)
 
-	shouldStartElection := !n.electionOngoing && n.currentLeader != n.id
+	shouldStartElection := !n.electionOngoing
 
 	n.Clock++
 	responseClock := n.Clock
