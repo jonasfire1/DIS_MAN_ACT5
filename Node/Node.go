@@ -478,6 +478,18 @@ func (n *Node) Bid(ctx context.Context, msg *pb.BidMSG) (*pb.AcknowledgementMSG,
 		}, nil
 	}
 
+	if n.synchOngoing {
+		n.Clock++
+
+		return &pb.AcknowledgementMSG{
+			Clock:        n.Clock,
+			Outcome:      pb.BidOutcome_BID_EXCEPTION,
+			Message:      "The leader is synchronizing with other nodes. Please try again later.",
+			LeaderId:     int32(n.currentLeader),
+			StateVersion: n.stateVersion,
+		}, nil
+	}
+
 	if msg.GetBidderId() == "" {
 		n.Clock++
 
@@ -550,9 +562,6 @@ func (n *Node) Bid(ctx context.Context, msg *pb.BidMSG) (*pb.AcknowledgementMSG,
 	n.highestBidder = msg.GetBidderId()
 	n.stateVersion++
 	n.Clock++
-	n.Mutex.Unlock()
-
-	n.UpdateReplicas()
 
 	response := &pb.AcknowledgementMSG{
 		Clock:        n.Clock,
@@ -564,13 +573,22 @@ func (n *Node) Bid(ctx context.Context, msg *pb.BidMSG) (*pb.AcknowledgementMSG,
 
 	n.processedRequests[msg.GetRequestId()] = response
 
+	acceptedClock := n.Clock
+	acceptedBid := n.highestBid
+	acceptedBidder := n.highestBidder
+	acceptedVersion := n.stateVersion
+
+	n.Mutex.Unlock()
+
+	n.UpdateReplicas()
+
 	log.Printf(
 		"logical time %d: node %d accepted bid %d from bidder %q as state version %d",
-		n.Clock,
+		acceptedClock,
 		n.id,
-		n.highestBid,
-		n.highestBidder,
-		n.stateVersion,
+		acceptedBid,
+		acceptedBidder,
+		acceptedVersion,
 	)
 
 	return response, nil
@@ -619,14 +637,14 @@ func (n *Node) RequestLeader(
 		n.id,
 	)
 	n.Clock++
-	
+
 	log.Printf(
 		"logical time %d: Resonded to leader information request that %d is leader for term %d",
 		n.Clock,
 		n.currentLeader,
 		n.leaderTerm,
 	)
-	
+
 	return &pb.IdentifierMSG{
 		Clock:      n.Clock,
 		Id:         int32(n.currentLeader),
@@ -940,7 +958,9 @@ func (n *Node) Synchronize() {
 		)
 		n.Mutex.Unlock()
 	}
+	n.Mutex.Lock()
 	n.synchOngoing = false
+	n.Mutex.Unlock()
 }
 
 func (n *Node) GetState(
