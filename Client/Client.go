@@ -77,12 +77,12 @@ func main() {
 
 func printUsage() {
 	fmt.Println("Usage:")
-	fmt.Println("  go run ./Client <bidder_id> <known_node_id> bid <amount>")
-	fmt.Println("  go run ./Client <bidder_id> <known_node_id> result")
+	fmt.Println("  go run ./Client <bidder_id> bid <amount>")
+	fmt.Println("  go run ./Client <bidder_id> result")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  go run ./Client alice 0 bid 500")
-	fmt.Println("  go run ./Client alice 1 result")
+	fmt.Println("  go run ./Client alice bid 500")
+	fmt.Println("  go run ./Client alice result")
 	os.Exit(1)
 }
 

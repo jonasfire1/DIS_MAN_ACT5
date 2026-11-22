@@ -609,6 +609,7 @@ func (n *Node) RequestLeader(
 	msg *pb.AcknowledgementMSG,
 ) (*pb.IdentifierMSG, error) {
 	n.Mutex.Lock()
+	defer n.Mutex.Unlock()
 
 	n.Clock = max(n.Clock, msg.GetClock()) + 1
 
@@ -617,22 +618,15 @@ func (n *Node) RequestLeader(
 		n.Clock,
 		n.id,
 	)
-	n.Mutex.Unlock()
-
-	//not very effecient
-	for n.electionOngoing {
-
-	}
-
-	n.Mutex.Lock()
 	n.Clock++
+	
 	log.Printf(
 		"logical time %d: Resonded to leader information request that %d is leader for term %d",
 		n.Clock,
 		n.currentLeader,
 		n.leaderTerm,
 	)
-	n.Mutex.Unlock()
+	
 	return &pb.IdentifierMSG{
 		Clock:      n.Clock,
 		Id:         int32(n.currentLeader),
