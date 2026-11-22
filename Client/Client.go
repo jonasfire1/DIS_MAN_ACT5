@@ -24,11 +24,10 @@ const (
 )
 
 type AuctionClient struct {
-	bidderID       string
-	clock          int32
-	lastKnowLeader int
-	clients        [numberOfNodes]pb.AuctionClient
-	connections    [numberOfNodes]*grpc.ClientConn
+	bidderID    string
+	clock       int32
+	clients     [numberOfNodes]pb.AuctionClient
+	connections [numberOfNodes]*grpc.ClientConn
 }
 
 func main() {
@@ -125,7 +124,7 @@ func (c *AuctionClient) closeConnections() {
 }
 
 func (c *AuctionClient) discoverLeader() (int, error) {
-	nodeOrder := c.nodeSearchOrder(int(c.lastKnowLeader))
+	nodeOrder := c.nodeSearchOrder()
 
 	for attempt := 1; attempt <= maxLeaderDiscoveries; attempt++ {
 		for _, nodeID := range nodeOrder {
@@ -165,7 +164,6 @@ func (c *AuctionClient) discoverLeader() (int, error) {
 				if err != nil || int(ConfirmationResponse.Id) != possibleLeaderID {
 					continue
 				}
-				c.lastKnowLeader = possibleLeaderID
 				return possibleLeaderID, nil
 			}
 		}
@@ -187,13 +185,12 @@ func (c *AuctionClient) discoverLeader() (int, error) {
 	)
 }
 
-func (c *AuctionClient) nodeSearchOrder(knownNodeID int) []int {
-	nodeOrder := []int{knownNodeID}
+// something smart could be done here, unfortunatly we're not
+func (c *AuctionClient) nodeSearchOrder() []int {
+	nodeOrder := []int{}
 
 	for nodeID := 0; nodeID < numberOfNodes; nodeID++ {
-		if nodeID != knownNodeID {
-			nodeOrder = append(nodeOrder, nodeID)
-		}
+		nodeOrder = append(nodeOrder, nodeID)
 	}
 
 	return nodeOrder
